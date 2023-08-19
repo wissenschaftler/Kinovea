@@ -1,6 +1,6 @@
 #region License
 /*
-Copyright © Joan Charmant 2008.
+Copyright Â© Joan Charmant 2008.
 jcharmant@gmail.com 
  
 This file is part of Kinovea.
@@ -1288,15 +1288,15 @@ namespace Kinovea.ScreenManager
                         else
                         {
                             // Ecran de droite en lecture, avec rien dedans.
-                            // Si l'écran de gauche était également vide, bEmpty reste à true.
-                            // Si l'écran de gauche était plein, bEmpty reste à false.
+                            // Si l'Ã©cran de gauche Ã©tait Ã©galement vide, bEmpty reste Ã  true.
+                            // Si l'Ã©cran de gauche Ã©tait plein, bEmpty reste Ã  false.
                         }
                     }
                     else if (screenList[1] is CaptureScreen)
                     {
                         // Ecran de droite en capture.
-                        // Si l'écran de gauche était également vide, bEmpty reste à true.
-                        // Si l'écran de gauche était plein, bEmpty reste à false.
+                        // Si l'Ã©cran de gauche Ã©tait Ã©galement vide, bEmpty reste Ã  true.
+                        // Si l'Ã©cran de gauche Ã©tait plein, bEmpty reste Ã  false.
                     }
                     break;
 
@@ -1512,11 +1512,11 @@ namespace Kinovea.ScreenManager
             mnuImportImage.Text = ScreenManagerLang.mnuImportImage;
             mnuTestGrid.Text = ScreenManagerLang.DrawingName_TestGrid;
             mnuCoordinateAxis.Text = ScreenManagerLang.mnuCoordinateSystem;
-            mnuCameraCalibration.Text = ScreenManagerLang.dlgCameraCalibration_Title + "…";
-            mnuScatterDiagram.Text = ScreenManagerLang.DataAnalysis_ScatterDiagram + "…";
-            mnuTrajectoryAnalysis.Text = ScreenManagerLang.DataAnalysis_LinearKinematics + "…";
-            mnuAngularAnalysis.Text = ScreenManagerLang.DataAnalysis_AngularKinematics + "…";
-            mnuAngleAngleAnalysis.Text = ScreenManagerLang.DataAnalysis_AngleAngleDiagrams + "…";
+            mnuCameraCalibration.Text = ScreenManagerLang.dlgCameraCalibration_Title + "Â…";
+            mnuScatterDiagram.Text = ScreenManagerLang.DataAnalysis_ScatterDiagram + "Â…";
+            mnuTrajectoryAnalysis.Text = ScreenManagerLang.DataAnalysis_LinearKinematics + "Â…";
+            mnuAngularAnalysis.Text = ScreenManagerLang.DataAnalysis_AngularKinematics + "Â…";
+            mnuAngleAngleAnalysis.Text = ScreenManagerLang.DataAnalysis_AngleAngleDiagrams + "Â…";
         }
             
         private void RefreshCultureMenuFilters()
@@ -1772,6 +1772,8 @@ namespace Kinovea.ScreenManager
             OrganizeCommonControls();
             OrganizeMenus();
         }
+
+       // try adding threeplayers like this
         private void mnuTwoPlayersOnClick(object sender, EventArgs e)
         {
             //------------------------------------------------------------
