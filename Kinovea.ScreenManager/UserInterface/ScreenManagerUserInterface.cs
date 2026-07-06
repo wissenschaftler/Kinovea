@@ -1,6 +1,6 @@
 #region License
 /*
-Copyright © Joan Charmant 2008.
+Copyright ù Joan Charmant 2008.
 jcharmant@gmail.com 
  
 This file is part of Kinovea.
@@ -106,8 +106,7 @@ namespace Kinovea.ScreenManager
             {
                 pnlScreens.Visible = false;
                 this.AllowDrop = true;
-                ClearLeftScreen();
-                ClearRightScreen();
+                ClearScreenColumns(true);
 
                 if (!Closing)
                     thumbnailViewerContainer.Unhide();
@@ -119,15 +118,7 @@ namespace Kinovea.ScreenManager
                 
                 thumbnailViewerContainer.HideContent();
 
-                splitScreens.Panel1.Controls.Clear();
-                splitScreens.Panel2.Controls.Clear();
-                
-                PrepareLeftScreen(screenList[0].UI);
-                
-                if(screenList.Count == 2)
-                    PrepareRightScreen(screenList[1].UI);
-                else
-                    ClearRightScreen();
+                PrepareScreenColumns(screenList);
             }
         }
         #endregion
@@ -161,37 +152,70 @@ namespace Kinovea.ScreenManager
         }
 
         #region Screen management
-        private void PrepareLeftScreen(UserControl screenUI)
+        private void PrepareScreenColumns(List<AbstractScreen> screenList)
         {
-            splitScreens.Panel1Collapsed = false;
-            splitScreens.Panel1.AllowDrop = true;
-            splitScreens.Panel1.Controls.Add(screenUI);
-            screenUI.Dock = DockStyle.Fill;
-        }
-        private void PrepareRightScreen(UserControl screenUI)
-        {
-            splitScreens.Panel2Collapsed = false;
-            splitScreens.Panel2.AllowDrop = true;
-            splitScreens.Panel2.Controls.Add(screenUI);
-            screenUI.Dock = DockStyle.Fill;
-        }
-        private void ClearLeftScreen()
-        {
-            foreach (Control c in splitScreens.Panel1.Controls)
-                c.Dispose();
+            ClearScreenColumns(false);
 
-            splitScreens.Panel1.Controls.Clear();
-            splitScreens.Panel1Collapsed = true;
-            splitScreens.Panel1.AllowDrop = false;
-        }
-        private void ClearRightScreen()
-        {
-            foreach (Control c in splitScreens.Panel2.Controls)
-                c.Dispose();
+            tableScreens.ColumnCount = screenList.Count;
+            tableScreens.ColumnStyles.Clear();
 
-            splitScreens.Panel2.Controls.Clear();
-            splitScreens.Panel2Collapsed = true;
-            splitScreens.Panel2.AllowDrop = false;
+            for (int i = 0; i < screenList.Count; i++)
+            {
+                tableScreens.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F / screenList.Count));
+
+                Panel panel = CreateScreenPanel(i);
+                UserControl screenUI = screenList[i].UI;
+                panel.Controls.Add(screenUI);
+                screenUI.Dock = DockStyle.Fill;
+                tableScreens.Controls.Add(panel, i, 0);
+            }
+        }
+
+        private Panel CreateScreenPanel(int index)
+        {
+            Panel panel = new Panel();
+            panel.AllowDrop = true;
+            panel.BackColor = Color.White;
+            panel.Dock = DockStyle.Fill;
+            panel.Margin = new Padding(0);
+            panel.Tag = index;
+            panel.DragDrop += ScreenPanel_DragDrop;
+            panel.DragOver += DroppableArea_DragOver;
+            return panel;
+        }
+
+        private void ClearScreenColumns(bool disposeScreenControls)
+        {
+            List<Control> controls = new List<Control>();
+            foreach (Control control in tableScreens.Controls)
+                controls.Add(control);
+
+            foreach (Control control in controls)
+            {
+                Panel panel = control as Panel;
+                if (panel == null)
+                    continue;
+
+                if (disposeScreenControls)
+                {
+                    List<Control> children = new List<Control>();
+                    foreach (Control child in panel.Controls)
+                        children.Add(child);
+
+                    foreach (Control child in children)
+                        child.Dispose();
+                }
+
+                panel.Controls.Clear();
+                panel.DragDrop -= ScreenPanel_DragDrop;
+                panel.DragOver -= DroppableArea_DragOver;
+                panel.Dispose();
+            }
+
+            tableScreens.Controls.Clear();
+            tableScreens.ColumnStyles.Clear();
+            tableScreens.ColumnCount = 1;
+            tableScreens.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
         }
         #endregion
         
@@ -204,13 +228,11 @@ namespace Kinovea.ScreenManager
         {
             Drop(e, -1);
         }
-        private void splitScreens_Panel1_DragDrop(object sender, DragEventArgs e)
+        private void ScreenPanel_DragDrop(object sender, DragEventArgs e)
         {
-            Drop(e, 0);
-        }
-        private void splitScreens_Panel2_DragDrop(object sender, DragEventArgs e)
-        {
-            Drop(e, 1);
+            Control control = sender as Control;
+            int target = control != null && control.Tag is int ? (int)control.Tag : -1;
+            Drop(e, target);
         }
         private void Drop(DragEventArgs e, int target)
         {

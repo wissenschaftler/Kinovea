@@ -1,6 +1,6 @@
 #region License
 /*
-Copyright © Joan Charmant 2008.
+Copyright  Joan Charmant 2008.
 jcharmant@gmail.com 
  
 This file is part of Kinovea.
@@ -59,7 +59,14 @@ namespace Kinovea.ScreenManager
         {
             get { return screenList.Count;}
         }
+
+        public int CaptureScreenCount
+        {
+            get { return captureScreens.Count(); }
+        }
         #endregion
+
+        public const int MaxScreens = 3;
 
         #region Members
         private ScreenManagerUserInterface view;
@@ -84,6 +91,7 @@ namespace Kinovea.ScreenManager
         #region Menus
         private ToolStripMenuItem mnuCloseFile = new ToolStripMenuItem();
         private ToolStripMenuItem mnuCloseFile2 = new ToolStripMenuItem();
+        private ToolStripMenuItem mnuCloseFile3 = new ToolStripMenuItem();
         private ToolStripMenuItem mnuSave = new ToolStripMenuItem();
         private ToolStripMenuItem mnuSaveAs = new ToolStripMenuItem();
         private ToolStripMenuItem mnuExportVideo = new ToolStripMenuItem();
@@ -338,6 +346,13 @@ namespace Kinovea.ScreenManager
             mnuCloseFile2.MergeIndex = 11;
             mnuCloseFile2.MergeAction = MergeAction.Insert;
 
+            mnuCloseFile3.Image = Properties.Resources.film_close3;
+            mnuCloseFile3.Enabled = false;
+            mnuCloseFile3.Visible = false;
+            mnuCloseFile3.Click += new EventHandler(mnuCloseFile3OnClick);
+            mnuCloseFile3.MergeIndex = 12;
+            mnuCloseFile3.MergeAction = MergeAction.Insert;
+
             //--------------------
 
             ToolStripItem[] subFile = new ToolStripItem[] {
@@ -353,6 +368,7 @@ namespace Kinovea.ScreenManager
                 //----
                 mnuCloseFile,
                 mnuCloseFile2,
+                mnuCloseFile3,
                 //----
                 // Quit.
                 };
@@ -700,12 +716,11 @@ namespace Kinovea.ScreenManager
 
             //screen.BeforeClose();
 
-            // Reorganise screens.
-            // We leverage the fact that screens are always well ordered relative to menus.
-            if (screenList.Count > 0 && screen == screenList[0])
-                CloseFile(0);
-            else
-                CloseFile(1);
+            int index = GetScreenIndex(screen);
+            if (index == -1)
+                return;
+
+            CloseFile(index);
 
             AfterSharedBufferChange();
         }
@@ -729,7 +744,10 @@ namespace Kinovea.ScreenManager
             if (string.IsNullOrEmpty(filename))
                 return;
 
-            int index = sender == screenList[0] ? 0 : 1;
+            int index = GetScreenIndex(sender);
+            if (index == -1)
+                return;
+
             VideoTypeManager.LoadVideo(filename, index);
         }
         private void Player_OpenReplayWatcherAsked(object sender, EventArgs e)
@@ -738,7 +756,9 @@ namespace Kinovea.ScreenManager
             if (string.IsNullOrEmpty(path))
                 return;
 
-            int index = sender == screenList[0] ? 0 : 1;
+            int index = GetScreenIndex(sender);
+            if (index == -1)
+                return;
 
             ScreenDescriptionPlayback screenDescription = new ScreenDescriptionPlayback();
             screenDescription.FullPath = path;
@@ -750,7 +770,10 @@ namespace Kinovea.ScreenManager
         }
         private void Player_OpenAnnotationsAsked(object sender, EventArgs e)
         {
-            int index = sender == screenList[0] ? 0 : 1;
+            int index = GetScreenIndex(sender);
+            if (index == -1)
+                return;
+
             LoadAnalysis(index);
         }
         private void Player_SelectionChanged(object sender, EventArgs<bool> e)
@@ -821,6 +844,17 @@ namespace Kinovea.ScreenManager
         {
             return (index >= 0 && index < screenList.Count) ? screenList[index] : null;
         }
+
+        public bool CanAddScreen()
+        {
+            return screenList.Count < MaxScreens;
+        }
+
+        private int GetScreenIndex(object sender)
+        {
+            AbstractScreen screen = sender as AbstractScreen;
+            return screen == null ? -1 : screenList.IndexOf(screen);
+        }
         
         public void RemoveFirstEmpty()
         {
@@ -866,6 +900,18 @@ namespace Kinovea.ScreenManager
             screenList[1] = temp;
         }
 
+        private bool RemoveScreensFromEnd(int count)
+        {
+            while (screenList.Count > count)
+            {
+                if (!ScreenRemover.RemoveScreen(this, screenList.Count - 1))
+                    return false;
+            }
+
+            AfterSharedBufferChange();
+            return true;
+        }
+
         public void OrganizeScreens()
         {
             view.OrganizeScreens(screenList);
@@ -894,17 +940,7 @@ namespace Kinovea.ScreenManager
 
             String StatusString = "";
 
-            switch(screenList.Count)
-            {
-                case 1:
-                    StatusString = screenList[0].Status;
-                    break;
-                case 2:
-                    StatusString = screenList[0].Status + " | " + screenList[1].Status;
-                    break;
-                default:
-                    break;
-            }
+            StatusString = string.Join(" | ", screenList.Select(s => s.Status));
 
             NotificationCenter.RaiseStatusUpdated(this, StatusString);
         }
@@ -930,8 +966,9 @@ namespace Kinovea.ScreenManager
         {
             // The screen list has changed and involve capture screens.
             // Update their shared state to trigger a memory buffer reset.
+            int captureScreenCount = CaptureScreenCount;
             foreach (CaptureScreen screen in captureScreens)
-                screen.SetShared(screenList.Count == 2);
+                screen.SetShared(captureScreenCount);
         }
         public void FullScreen(bool fullScreen)
         {
@@ -1205,118 +1242,41 @@ namespace Kinovea.ScreenManager
 
             #region Menus depending on the specifc screen configuration
             // File
-            mnuCloseFile.Visible  = false;
-            mnuCloseFile.Enabled  = false;
-            mnuCloseFile2.Visible = false;
-            mnuCloseFile2.Enabled = false;
-            string strClosingText = ScreenManagerLang.Generic_Close;
-            
-            bool allScreensAreEmpty = false;
-            switch (screenList.Count)
+            ToolStripMenuItem[] closeFileMenus = new ToolStripMenuItem[] { mnuCloseFile, mnuCloseFile2, mnuCloseFile3 };
+            foreach (ToolStripMenuItem menu in closeFileMenus)
             {
-                case 0:
-                    mnuSwapScreens.Enabled = false;
-                    mnuToggleCommonCtrls.Enabled = false;
-                    allScreensAreEmpty = true;
-                    break;
-
-                case 1:
-                    mnuSwapScreens.Enabled = false;
-                    mnuToggleCommonCtrls.Enabled = false;
-
-                    if(!screenList[0].Full)
-                    {
-                        allScreensAreEmpty = true;	
-                    }
-                    else if(screenList[0] is PlayerScreen)
-                    {
-                        // Only screen is an full PlayerScreen.
-                        mnuCloseFile.Text = strClosingText;
-                        mnuCloseFile.Enabled = true;
-                        mnuCloseFile.Visible = true;
-
-                        mnuCloseFile2.Visible = false;
-                        mnuCloseFile2.Enabled = false;
-                    }
-                    else if(screenList[0] is CaptureScreen)
-                    {
-                        allScreensAreEmpty = true;	
-                    }
-                    break;
-
-                case 2:
-                    mnuSwapScreens.Enabled = true;
-                    mnuToggleCommonCtrls.Enabled = canShowCommonControls;
-                    
-                    // Left Screen
-                    if (screenList[0] is PlayerScreen)
-                    {
-                        if (screenList[0].Full)
-                        {
-                            allScreensAreEmpty = false;
-                            
-                            string strCompleteClosingText = strClosingText + " - " + ((PlayerScreen)screenList[0]).FileName;
-                            mnuCloseFile.Text = strCompleteClosingText;
-                            mnuCloseFile.Enabled = true;
-                            mnuCloseFile.Visible = true;
-                        }
-                        else
-                        {
-                            // Left screen is an empty PlayerScreen.
-                            // Global emptiness might be changed below.
-                            allScreensAreEmpty = true;
-                        }
-                    }
-                    else if(screenList[0] is CaptureScreen)
-                    {
-                        // Global emptiness might be changed below.
-                        allScreensAreEmpty = true;
-                    }
-
-                    // Right Screen.
-                    if (screenList[1] is PlayerScreen)
-                    {
-                        if (screenList[1].Full)
-                        {
-                            allScreensAreEmpty = false;
-                            
-                            string strCompleteClosingText = strClosingText + " - " + ((PlayerScreen)screenList[1]).FileName;
-                            mnuCloseFile2.Text = strCompleteClosingText;
-                            mnuCloseFile2.Enabled = true;
-                            mnuCloseFile2.Visible = true;
-                        }
-                        else
-                        {
-                            // Ecran de droite en lecture, avec rien dedans.
-                            // Si l'écran de gauche était également vide, bEmpty reste à true.
-                            // Si l'écran de gauche était plein, bEmpty reste à false.
-                        }
-                    }
-                    else if (screenList[1] is CaptureScreen)
-                    {
-                        // Ecran de droite en capture.
-                        // Si l'écran de gauche était également vide, bEmpty reste à true.
-                        // Si l'écran de gauche était plein, bEmpty reste à false.
-                    }
-                    break;
-
-                default:
-                    // KO.
-                    mnuSwapScreens.Enabled       = false;
-                    mnuToggleCommonCtrls.Enabled = false;
-                    allScreensAreEmpty = true;
-                    break;
+                menu.Visible = false;
+                menu.Enabled = false;
             }
 
-            if (allScreensAreEmpty)
+            string strClosingText = ScreenManagerLang.Generic_Close;
+            
+            mnuSwapScreens.Enabled = screenList.Count == 2;
+            mnuToggleCommonCtrls.Enabled = screenList.Count == 2 && canShowCommonControls;
+
+            bool allScreensAreEmpty = screenList.Count == 0 || screenList.All(screen => !screen.Full);
+            int closeMenuIndex = 0;
+            for (int i = 0; i < screenList.Count && closeMenuIndex < closeFileMenus.Length; i++)
+            {
+                PlayerScreen player = screenList[i] as PlayerScreen;
+                if (player == null || !player.Full)
+                    continue;
+
+                ToolStripMenuItem menu = closeFileMenus[closeMenuIndex];
+                menu.Text = strClosingText + " - " + player.FileName;
+                menu.Tag = i;
+                menu.Enabled = true;
+                menu.Visible = true;
+                closeMenuIndex++;
+            }
+
+            if (allScreensAreEmpty || closeMenuIndex == 0)
             {
                 // No screens at all, or all screens empty => 1 menu visible but disabled.
 
                 mnuCloseFile.Text = strClosingText;
                 mnuCloseFile.Visible = true;
                 mnuCloseFile.Enabled = false;
-
-                mnuCloseFile2.Visible = false;
             }
             #endregion
         }
@@ -1457,6 +1417,7 @@ namespace Kinovea.ScreenManager
             // File
             mnuCloseFile.Text = ScreenManagerLang.Generic_Close;
             mnuCloseFile2.Text = ScreenManagerLang.Generic_Close;
+            mnuCloseFile3.Text = ScreenManagerLang.Generic_Close;
             mnuSave.Text = ScreenManagerLang.Generic_SaveKVA;
             mnuSaveAs.Text = ScreenManagerLang.Generic_SaveKVAAs;
             mnuExportVideo.Text = ScreenManagerLang.Generic_ExportVideo;
@@ -1512,11 +1473,11 @@ namespace Kinovea.ScreenManager
             mnuImportImage.Text = ScreenManagerLang.mnuImportImage;
             mnuTestGrid.Text = ScreenManagerLang.DrawingName_TestGrid;
             mnuCoordinateAxis.Text = ScreenManagerLang.mnuCoordinateSystem;
-            mnuCameraCalibration.Text = ScreenManagerLang.dlgCameraCalibration_Title + "…";
-            mnuScatterDiagram.Text = ScreenManagerLang.DataAnalysis_ScatterDiagram + "…";
-            mnuTrajectoryAnalysis.Text = ScreenManagerLang.DataAnalysis_LinearKinematics + "…";
-            mnuAngularAnalysis.Text = ScreenManagerLang.DataAnalysis_AngularKinematics + "…";
-            mnuAngleAngleAnalysis.Text = ScreenManagerLang.DataAnalysis_AngleAngleDiagrams + "…";
+            mnuCameraCalibration.Text = ScreenManagerLang.dlgCameraCalibration_Title + "";
+            mnuScatterDiagram.Text = ScreenManagerLang.DataAnalysis_ScatterDiagram + "";
+            mnuTrajectoryAnalysis.Text = ScreenManagerLang.DataAnalysis_LinearKinematics + "";
+            mnuAngularAnalysis.Text = ScreenManagerLang.DataAnalysis_AngularKinematics + "";
+            mnuAngleAngleAnalysis.Text = ScreenManagerLang.DataAnalysis_AngleAngleDiagrams + "";
         }
             
         private void RefreshCultureMenuFilters()
@@ -1536,15 +1497,26 @@ namespace Kinovea.ScreenManager
         #region File
         private void mnuCloseFileOnClick(object sender, EventArgs e)
         {
-            CloseFile(0);
+            CloseFileFromMenu(sender, 0);
         }
         private void mnuCloseFile2OnClick(object sender, EventArgs e)
         {
-            CloseFile(1);
+            CloseFileFromMenu(sender, 1);
+        }
+        private void mnuCloseFile3OnClick(object sender, EventArgs e)
+        {
+            CloseFileFromMenu(sender, 2);
+        }
+        private void CloseFileFromMenu(object sender, int defaultIndex)
+        {
+            ToolStripMenuItem menu = sender as ToolStripMenuItem;
+            int screenIndex = menu != null && menu.Tag is int ? (int)menu.Tag : defaultIndex;
+            CloseFile(screenIndex);
         }
         private void CloseFile(int screenIndex)
         {
             ScreenRemover.RemoveScreen(this, screenIndex);
+            AfterSharedBufferChange();
             OrganizeScreens();
             OrganizeCommonControls();
             OrganizeMenus();
@@ -1583,23 +1555,27 @@ namespace Kinovea.ScreenManager
         {
             if (activeScreen != null)
             {
-                int index = activeScreen == screenList[0] ? 0 : 1;
+                int index = GetScreenIndex(activeScreen);
+                if (index == -1)
+                    return;
+
                 LoadAnalysis(index);
             }
         }
         private void LoadAnalysis(int targetScreen)
         {
-            if (screenList[targetScreen] == null)
+            AbstractScreen screen = GetScreenAt(targetScreen);
+            if (screen == null)
                 return;
 
-            if (screenList[targetScreen] is PlayerScreen)
+            if (screen is PlayerScreen)
                 DoStopPlaying();
              
             string filename = FilePicker.OpenAnnotations();
             if (filename == null)
                 return;
 
-            screenList[targetScreen].LoadKVA(filename);
+            screen.LoadKVA(filename);
         }
         private void mnuExportODF_OnClick(object sender, EventArgs e)
         {
@@ -1699,6 +1675,9 @@ namespace Kinovea.ScreenManager
             // Here : One player screen.
             //------------------------------------------------------------
 
+            if (!RemoveScreensFromEnd(2))
+                return;
+
             switch (screenList.Count)
             {
                 case 0:
@@ -1781,6 +1760,9 @@ namespace Kinovea.ScreenManager
             // Here : Two player screens.
             //------------------------------------------------------------
 
+            if (!RemoveScreensFromEnd(2))
+                return;
+
             switch (screenList.Count)
             {
                 case 0:
@@ -1860,6 +1842,9 @@ namespace Kinovea.ScreenManager
             // Here : One capture screens.
             //------------------------------------------------------------
             
+            if (!RemoveScreensFromEnd(2))
+                return;
+
             switch (screenList.Count)
             {
                 case 0:
@@ -1948,6 +1933,9 @@ namespace Kinovea.ScreenManager
             // Here : Two capture screens.
             //------------------------------------------------------------
             
+            if (!RemoveScreensFromEnd(2))
+                return;
+
             switch (screenList.Count)
             {
                 case 0:
@@ -2035,6 +2023,9 @@ namespace Kinovea.ScreenManager
             // Here : Mixed screen. The workspace preset is : [capture][player]
             //------------------------------------------------------------
             
+            if (!RemoveScreensFromEnd(2))
+                return;
+
             switch (screenList.Count)
             {
                 case 0:
@@ -2402,8 +2393,8 @@ namespace Kinovea.ScreenManager
             int reloaded = 0;
 
             int count = LaunchSettingsManager.ScreenDescriptions.Count;
-            if (count > 2)
-                LaunchSettingsManager.ScreenDescriptions.RemoveRange(2, count - 2);
+            if (count > MaxScreens)
+                LaunchSettingsManager.ScreenDescriptions.RemoveRange(MaxScreens, count - MaxScreens);
 
             // Start by collecting the list of cameras to be found. 
             // We will keep the camera discovery system active until we have found all of them or time out.
@@ -2421,19 +2412,20 @@ namespace Kinovea.ScreenManager
             {
                 if (screenDescription is ScreenDescriptionCapture)
                 {
+                    int targetScreen = reloaded;
                     AddCaptureScreen();
                     ScreenDescriptionCapture sdc = screenDescription as ScreenDescriptionCapture;
                     CameraSummary summary = new CameraSummary(sdc.CameraName);
 
-                    int targetScreen = reloaded == 1 ? 1 : 0;
                     LoaderCamera.LoadCameraInScreen(this, summary, targetScreen, sdc);
                     reloaded++;
                 }
                 else if (screenDescription is ScreenDescriptionPlayback)
                 {
+                    int targetScreen = reloaded;
                     AddPlayerScreen();
                     ScreenDescriptionPlayback sdp = screenDescription as ScreenDescriptionPlayback;
-                    LoaderVideo.LoadVideoInScreen(this, sdp.FullPath, sdp);
+                    LoaderVideo.LoadVideoInScreen(this, sdp.FullPath, targetScreen, sdp);
                     reloaded++;
                 }
             }
@@ -2531,16 +2523,20 @@ namespace Kinovea.ScreenManager
         }
         public void AddPlayerScreen()
         {
+            if (!CanAddScreen())
+                return;
+
             PlayerScreen screen = new PlayerScreen();
             screen.RefreshUICulture();
             AddScreen(screen);
         }
         public void AddCaptureScreen()
         {
+            if (!CanAddScreen())
+                return;
             
             CaptureScreen screen = new CaptureScreen();
-            if (screenList.Count > 0)
-                screen.SetShared(true);
+            screen.SetShared(CaptureScreenCount + 1);
 
             screen.RefreshUICulture();
             AddScreen(screen);
@@ -2552,20 +2548,19 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public int FindTargetScreen(Type type)
         {
-            AbstractScreen screen0 = GetScreenAt(0);
-            AbstractScreen screen1 = GetScreenAt(1);
-            if (screen0 != null && !screen0.Full && screen0.GetType() == type)
-                return 0;
+            for (int i = 0; i < screenList.Count; i++)
+            {
+                AbstractScreen screen = screenList[i];
+                if (screen.GetType() == type && !screen.Full)
+                    return i;
+            }
 
-            if (screen1 != null && !screen1.Full && screen1.GetType() == type)
-                return 1;
-
-            // If no empty screen was found, overload, but start on the right.
-            if (screen1 != null && screen1.GetType() == type)
-                return 1;
-
-            if (screen0 != null && screen0.GetType() == type)
-                return 0;
+            // If no empty screen was found, overload, but start from the last screen.
+            for (int i = screenList.Count - 1; i >= 0; i--)
+            {
+                if (screenList[i].GetType() == type)
+                    return i;
+            }
 
             // We do not replace capture screens with videos or vice-versa.
             return -1;
@@ -2610,9 +2605,13 @@ namespace Kinovea.ScreenManager
         
         private void AddScreen(AbstractScreen screen)
         {
-            // We are about to add a new screen, signal it to a potential existing capture screen for buffer memory management.
+            if (!CanAddScreen())
+                return;
+
+            // We are about to add a new screen, signal it to existing capture screens for buffer memory management.
+            int captureScreenCount = CaptureScreenCount + (screen is CaptureScreen ? 1 : 0);
             foreach (CaptureScreen captureScreen in captureScreens)
-                captureScreen.SetShared(true);
+                captureScreen.SetShared(captureScreenCount);
 
             AddScreenEventHandlers(screen);
             screenList.Add(screen);

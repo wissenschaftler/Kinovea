@@ -31,12 +31,12 @@ namespace Kinovea.ScreenManager
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(ScreenManagerUserInterface));
             this.pnlScreens = new System.Windows.Forms.Panel();
             this.splitScreensPanel = new System.Windows.Forms.SplitContainer();
-            this.splitScreens = new System.Windows.Forms.SplitContainer();
+            this.tableScreens = new System.Windows.Forms.TableLayoutPanel();
             this.pbLogo = new System.Windows.Forms.PictureBox();
             this.pnlScreens.SuspendLayout();
             this.splitScreensPanel.Panel1.SuspendLayout();
             this.splitScreensPanel.SuspendLayout();
-            this.splitScreens.SuspendLayout();
+            this.tableScreens.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.pbLogo)).BeginInit();
             this.SuspendLayout();
             // 
@@ -63,7 +63,7 @@ namespace Kinovea.ScreenManager
             // 
             // splitScreensPanel.Panel1
             // 
-            this.splitScreensPanel.Panel1.Controls.Add(this.splitScreens);
+            this.splitScreensPanel.Panel1.Controls.Add(this.tableScreens);
             // 
             // splitScreensPanel.Panel2
             // 
@@ -72,27 +72,18 @@ namespace Kinovea.ScreenManager
             this.splitScreensPanel.SplitterDistance = 315;
             this.splitScreensPanel.TabIndex = 0;
             // 
-            // splitScreens
+            // tableScreens
             // 
-            this.splitScreens.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            this.splitScreens.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.splitScreens.Location = new System.Drawing.Point(0, 0);
-            this.splitScreens.Name = "splitScreens";
-            // 
-            // splitScreens.Panel1
-            // 
-            this.splitScreens.Panel1.BackColor = System.Drawing.Color.White;
-            this.splitScreens.Panel1.DragDrop += new System.Windows.Forms.DragEventHandler(this.splitScreens_Panel1_DragDrop);
-            this.splitScreens.Panel1.DragOver += new System.Windows.Forms.DragEventHandler(this.DroppableArea_DragOver);
-            // 
-            // splitScreens.Panel2
-            // 
-            this.splitScreens.Panel2.BackColor = System.Drawing.Color.White;
-            this.splitScreens.Panel2.DragDrop += new System.Windows.Forms.DragEventHandler(this.splitScreens_Panel2_DragDrop);
-            this.splitScreens.Panel2.DragOver += new System.Windows.Forms.DragEventHandler(this.DroppableArea_DragOver);
-            this.splitScreens.Size = new System.Drawing.Size(574, 315);
-            this.splitScreens.SplitterDistance = 287;
-            this.splitScreens.TabIndex = 0;
+            this.tableScreens.BackColor = System.Drawing.Color.White;
+            this.tableScreens.ColumnCount = 1;
+            this.tableScreens.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
+            this.tableScreens.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.tableScreens.Location = new System.Drawing.Point(0, 0);
+            this.tableScreens.Name = "tableScreens";
+            this.tableScreens.RowCount = 1;
+            this.tableScreens.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
+            this.tableScreens.Size = new System.Drawing.Size(572, 313);
+            this.tableScreens.TabIndex = 0;
             // 
             // pbLogo
             // 
@@ -124,7 +115,7 @@ namespace Kinovea.ScreenManager
             this.pnlScreens.ResumeLayout(false);
             this.splitScreensPanel.Panel1.ResumeLayout(false);
             this.splitScreensPanel.ResumeLayout(false);
-            this.splitScreens.ResumeLayout(false);
+            this.tableScreens.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.pbLogo)).EndInit();
             this.ResumeLayout(false);
 
@@ -134,7 +125,7 @@ namespace Kinovea.ScreenManager
 
         private System.Windows.Forms.PictureBox pbLogo;
         private System.Windows.Forms.SplitContainer splitScreensPanel;
-        private System.Windows.Forms.SplitContainer splitScreens;
+        private System.Windows.Forms.TableLayoutPanel tableScreens;
         private System.Windows.Forms.Panel pnlScreens;
 
     }

@@ -22,6 +22,8 @@ namespace Kinovea.ScreenManager
             }
 
             AbstractScreen screenToRemove = manager.GetScreenAt(targetScreen);
+            if (screenToRemove == null)
+                return false;
 
             if (screenToRemove is CaptureScreen)
             {
