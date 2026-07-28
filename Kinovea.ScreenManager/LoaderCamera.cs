@@ -30,15 +30,18 @@ namespace Kinovea.ScreenManager
                 manager.AddCaptureScreen();
                 LoadInSpecificTarget(manager, 0, summary, screenDescription);
             }
-            else if (manager.ScreenCount == 1)
-            {
-                LoadInSpecificTarget(manager, 0, summary, screenDescription);
-            }
-            else if (manager.ScreenCount == 2)
+            else
             {
                 int target = manager.FindTargetScreen(typeof(CaptureScreen));
                 if (target != -1)
+                {
                     LoadInSpecificTarget(manager, target, summary, screenDescription);
+                }
+                else if (manager.CanAddScreen())
+                {
+                    manager.AddCaptureScreen();
+                    LoadInSpecificTarget(manager, manager.ScreenCount - 1, summary, screenDescription);
+                }
             }
         }
 
@@ -59,10 +62,10 @@ namespace Kinovea.ScreenManager
             {
                 // Loading a camera onto a video should never close the video.
                 // We only load the camera if there is room to create a new capture screen, otherwise we do nothing.
-                if (manager.ScreenCount == 1)
+                if (manager.CanAddScreen())
                 {
                     manager.AddCaptureScreen();
-                    LoadInSpecificTarget(manager, 1, summary, screenDescription);
+                    LoadInSpecificTarget(manager, manager.ScreenCount - 1, summary, screenDescription);
                 }
             }
         }

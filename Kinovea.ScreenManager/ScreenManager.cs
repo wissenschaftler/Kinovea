@@ -1,6 +1,6 @@
-#region License
+Ôªø#region License
 /*
-Copyright ù Joan Charmant 2008.
+Copyright ¬ù Joan Charmant 2008.
 jcharmant@gmail.com 
  
 This file is part of Kinovea.
@@ -66,7 +66,7 @@ namespace Kinovea.ScreenManager
         }
         #endregion
 
-        public const int MaxScreens = 3;
+        public const int MaxScreens = ScreenLayoutSpec.MaximumScreenCount;
 
         #region Members
         private ScreenManagerUserInterface view;
@@ -77,6 +77,8 @@ namespace Kinovea.ScreenManager
         private IEnumerable<CaptureScreen> captureScreens;
         private AbstractScreen activeScreen = null;
         private bool canShowCommonControls;
+        private int layoutColumns = 1;
+        private int layoutRows = 1;
         private int dualLaunchSettingsPendingCountdown;
         private List<string> camerasToDiscover = new List<string>();
         private AudioInputLevelMonitor audioInputLevelMonitor = new AudioInputLevelMonitor();
@@ -92,6 +94,7 @@ namespace Kinovea.ScreenManager
         private ToolStripMenuItem mnuCloseFile = new ToolStripMenuItem();
         private ToolStripMenuItem mnuCloseFile2 = new ToolStripMenuItem();
         private ToolStripMenuItem mnuCloseFile3 = new ToolStripMenuItem();
+        private ToolStripMenuItem mnuCloseFile4 = new ToolStripMenuItem();
         private ToolStripMenuItem mnuSave = new ToolStripMenuItem();
         private ToolStripMenuItem mnuSaveAs = new ToolStripMenuItem();
         private ToolStripMenuItem mnuExportVideo = new ToolStripMenuItem();
@@ -108,9 +111,13 @@ namespace Kinovea.ScreenManager
         
         private ToolStripMenuItem mnuOnePlayer = new ToolStripMenuItem();
         private ToolStripMenuItem mnuTwoPlayers = new ToolStripMenuItem();
+        private ToolStripMenuItem mnuThreePlayers = new ToolStripMenuItem();
+        private ToolStripMenuItem mnuFourPlayers = new ToolStripMenuItem();
+        private ToolStripMenuItem mnuFourPlayersRow = new ToolStripMenuItem();
         private ToolStripMenuItem mnuOneCapture = new ToolStripMenuItem();
         private ToolStripMenuItem mnuTwoCaptures = new ToolStripMenuItem();
         private ToolStripMenuItem mnuTwoMixed = new ToolStripMenuItem();
+        private ToolStripMenuItem mnuConfigureScreens = new ToolStripMenuItem();
         private ToolStripMenuItem mnuSwapScreens = new ToolStripMenuItem();
         private ToolStripMenuItem mnuToggleCommonCtrls = new ToolStripMenuItem();
 
@@ -155,6 +162,9 @@ namespace Kinovea.ScreenManager
         private ToolStripButton toolSave = new ToolStripButton();
         private ToolStripButton toolOnePlayer = new ToolStripButton();
         private ToolStripButton toolTwoPlayers = new ToolStripButton();
+        private ToolStripButton toolThreePlayers = new ToolStripButton();
+        private ToolStripButton toolFourPlayers = new ToolStripButton();
+        private ToolStripButton toolFourPlayersRow = new ToolStripButton();
         private ToolStripButton toolOneCapture = new ToolStripButton();
         private ToolStripButton toolTwoCaptures = new ToolStripButton();
         private ToolStripButton toolTwoMixed = new ToolStripButton();
@@ -353,6 +363,13 @@ namespace Kinovea.ScreenManager
             mnuCloseFile3.MergeIndex = 12;
             mnuCloseFile3.MergeAction = MergeAction.Insert;
 
+            mnuCloseFile4.Image = Properties.Resources.film_close3;
+            mnuCloseFile4.Enabled = false;
+            mnuCloseFile4.Visible = false;
+            mnuCloseFile4.Click += new EventHandler(mnuCloseFile4OnClick);
+            mnuCloseFile4.MergeIndex = 13;
+            mnuCloseFile4.MergeAction = MergeAction.Insert;
+
             //--------------------
 
             ToolStripItem[] subFile = new ToolStripItem[] {
@@ -369,6 +386,7 @@ namespace Kinovea.ScreenManager
                 mnuCloseFile,
                 mnuCloseFile2,
                 mnuCloseFile3,
+                mnuCloseFile4,
                 //----
                 // Quit.
                 };
@@ -406,6 +424,15 @@ namespace Kinovea.ScreenManager
             mnuTwoPlayers.Image = Properties.Resources.dualplayback;
             mnuTwoPlayers.Click += new EventHandler(mnuTwoPlayersOnClick);
             mnuTwoPlayers.MergeAction = MergeAction.Append;
+            mnuThreePlayers.Image = Properties.Resources.dualplayback;
+            mnuThreePlayers.Click += (s, e) => ApplyLayout(ScreenLayoutSpec.Playback(3));
+            mnuThreePlayers.MergeAction = MergeAction.Append;
+            mnuFourPlayers.Image = Properties.Resources.dualplayback;
+            mnuFourPlayers.Click += (s, e) => ApplyLayout(ScreenLayoutSpec.Playback(4, 2, 2));
+            mnuFourPlayers.MergeAction = MergeAction.Append;
+            mnuFourPlayersRow.Image = Properties.Resources.dualplayback;
+            mnuFourPlayersRow.Click += (s, e) => ApplyLayout(ScreenLayoutSpec.Playback(4, 4, 1));
+            mnuFourPlayersRow.MergeAction = MergeAction.Append;
             mnuOneCapture.Image = Properties.Resources.camera_video;
             mnuOneCapture.Click += new EventHandler(mnuOneCaptureOnClick);
             mnuOneCapture.MergeAction = MergeAction.Append;
@@ -415,6 +442,9 @@ namespace Kinovea.ScreenManager
             mnuTwoMixed.Image = Properties.Resources.dualmixed3;
             mnuTwoMixed.Click += new EventHandler(mnuTwoMixedOnClick);
             mnuTwoMixed.MergeAction = MergeAction.Append;
+            mnuConfigureScreens.Image = Properties.Resources.common_controls;
+            mnuConfigureScreens.Click += new EventHandler(mnuConfigureScreens_Click);
+            mnuConfigureScreens.MergeAction = MergeAction.Append;
                         
             mnuSwapScreens.Image = Properties.Resources.flatswap3d;
             mnuSwapScreens.Enabled = false;
@@ -429,11 +459,15 @@ namespace Kinovea.ScreenManager
             
             ToolStripItem[] subScreens = new ToolStripItem[] { 		mnuOnePlayer,
                                                                     mnuTwoPlayers,
+                                                                    mnuThreePlayers,
+                                                                    mnuFourPlayers,
+                                                                    mnuFourPlayersRow,
                                                                     new ToolStripSeparator(),
                                                                     mnuOneCapture, 
                                                                     mnuTwoCaptures,
                                                                     new ToolStripSeparator(),
-                                                                    mnuTwoMixed, 
+                                                                    mnuTwoMixed,
+                                                                    mnuConfigureScreens,
                                                                     new ToolStripSeparator(), 
                                                                     mnuSwapScreens, 
                                                                     mnuToggleCommonCtrls };
@@ -608,6 +642,18 @@ namespace Kinovea.ScreenManager
             toolTwoPlayers.DisplayStyle = ToolStripItemDisplayStyle.Image;
             toolTwoPlayers.Image = Properties.Resources.dualplayback;
             toolTwoPlayers.Click += new EventHandler(mnuTwoPlayersOnClick);
+
+            toolThreePlayers.DisplayStyle = ToolStripItemDisplayStyle.Image;
+            toolThreePlayers.Image = Properties.Resources.dualplayback;
+            toolThreePlayers.Click += (s, e) => ApplyLayout(ScreenLayoutSpec.Playback(3));
+
+            toolFourPlayers.DisplayStyle = ToolStripItemDisplayStyle.Image;
+            toolFourPlayers.Image = Properties.Resources.dualplayback;
+            toolFourPlayers.Click += (s, e) => ApplyLayout(ScreenLayoutSpec.Playback(4, 2, 2));
+
+            toolFourPlayersRow.DisplayStyle = ToolStripItemDisplayStyle.Image;
+            toolFourPlayersRow.Image = Properties.Resources.dualplayback;
+            toolFourPlayersRow.Click += (s, e) => ApplyLayout(ScreenLayoutSpec.Playback(4, 4, 1));
             
             toolOneCapture.DisplayStyle = ToolStripItemDisplayStyle.Image;
             toolOneCapture.Image = Properties.Resources.camera_video;
@@ -628,6 +674,9 @@ namespace Kinovea.ScreenManager
                                             new ToolStripSeparator(),
                                             toolOnePlayer,
                                             toolTwoPlayers,
+                                            toolThreePlayers,
+                                            toolFourPlayers,
+                                            toolFourPlayersRow,
                                             new ToolStripSeparator(),
                                             toolOneCapture, 
                                             toolTwoCaptures, 
@@ -732,9 +781,9 @@ namespace Kinovea.ScreenManager
         private void Screen_DualCommandReceived(object sender, EventArgs<HotkeyCommand> e)
         {
             // A screen has received a hotkey that must be handled at manager level.
-            if (dualPlayer.Active)
+            if (sender is PlayerScreen && dualPlayer.Active)
                 dualPlayer.ExecuteDualCommand(e.Value);
-            else if (dualCapture.Active)
+            else if (sender is CaptureScreen && dualCapture.Active)
                 dualCapture.ExecuteDualCommand(e.Value);
         }
 
@@ -825,6 +874,7 @@ namespace Kinovea.ScreenManager
             if (screenList.Count == 1 || screen == activeScreen)
             {
                 activeScreen = screen;
+                dualPlayer.SetReferencePlayer(screen as PlayerScreen);
                 OrganizeMenus();
                 return;
             }
@@ -833,6 +883,7 @@ namespace Kinovea.ScreenManager
                 s.DisplayAsActiveScreen(s == screen);
                 
             activeScreen = screen;
+            dualPlayer.SetReferencePlayer(screen as PlayerScreen);
             OrganizeMenus();
         }
         public void SetAllToInactive()
@@ -914,7 +965,8 @@ namespace Kinovea.ScreenManager
 
         public void OrganizeScreens()
         {
-            view.OrganizeScreens(screenList);
+            SyncLayoutGridToScreenCount();
+            view.OrganizeScreens(screenList, layoutColumns, layoutRows);
             UpdateStatusBar();
 
             for (int i = 0; i < screenList.Count; i++)
@@ -946,21 +998,19 @@ namespace Kinovea.ScreenManager
         }
         public void OrganizeCommonControls()
         {
-            dualPlayer.ScreenListChanged(screenList);
+            SyncLayoutGridToScreenCount();
+            dualPlayer.ScreenListChanged(screenList, layoutColumns, layoutRows);
+            dualPlayer.SetReferencePlayer(activeScreen as PlayerScreen);
             dualCapture.ScreenListChanged(screenList);
-            
-            if (screenList.Count == 2)
-            {
-                Pair<Type, Type> types = new Pair<Type, Type>(screenList[0].GetType(), screenList[1].GetType());
-                bool show = types.First == types.Second;
-                view.ShowCommonControls(show, types, dualPlayer.View, dualCapture.View);
-                canShowCommonControls = show;
-            }
-            else
-            {
-                view.ShowCommonControls(false, null, null, null);
-                canShowCommonControls = false;
-            }
+
+            bool showPlayers = playerScreens.Count() >= 2;
+            bool showCapture = captureScreens.Count() >= 2;
+            view.ShowCommonControls(showPlayers, dualPlayer.View, showCapture, dualCapture.View);
+            canShowCommonControls = showPlayers || showCapture;
+
+            bool canSwap = screenList.Count == 2;
+            dualPlayer.View.SetSwapEnabled(canSwap);
+            dualCapture.View.SetSwapEnabled(canSwap);
         }
         public void AfterSharedBufferChange()
         {
@@ -1242,7 +1292,7 @@ namespace Kinovea.ScreenManager
 
             #region Menus depending on the specifc screen configuration
             // File
-            ToolStripMenuItem[] closeFileMenus = new ToolStripMenuItem[] { mnuCloseFile, mnuCloseFile2, mnuCloseFile3 };
+            ToolStripMenuItem[] closeFileMenus = new ToolStripMenuItem[] { mnuCloseFile, mnuCloseFile2, mnuCloseFile3, mnuCloseFile4 };
             foreach (ToolStripMenuItem menu in closeFileMenus)
             {
                 menu.Visible = false;
@@ -1252,7 +1302,7 @@ namespace Kinovea.ScreenManager
             string strClosingText = ScreenManagerLang.Generic_Close;
             
             mnuSwapScreens.Enabled = screenList.Count == 2;
-            mnuToggleCommonCtrls.Enabled = screenList.Count == 2 && canShowCommonControls;
+            mnuToggleCommonCtrls.Enabled = canShowCommonControls;
 
             bool allScreensAreEmpty = screenList.Count == 0 || screenList.All(screen => !screen.Full);
             int closeMenuIndex = 0;
@@ -1408,6 +1458,9 @@ namespace Kinovea.ScreenManager
             toolHome.ToolTipText = ScreenManagerLang.mnuHome;
             toolOnePlayer.ToolTipText = ScreenManagerLang.mnuOnePlayer;
             toolTwoPlayers.ToolTipText = ScreenManagerLang.mnuTwoPlayers;
+            toolThreePlayers.ToolTipText = ScreenManagerLang.mnuThreePlayers;
+            toolFourPlayers.ToolTipText = ScreenManagerLang.mnuFourPlayers;
+            toolFourPlayersRow.ToolTipText = ScreenManagerLang.mnuFourPlayersRow;
             toolOneCapture.ToolTipText = ScreenManagerLang.mnuOneCapture;
             toolTwoCaptures.ToolTipText = ScreenManagerLang.mnuTwoCaptures;
             toolTwoMixed.ToolTipText = ScreenManagerLang.mnuTwoMixed;	
@@ -1418,6 +1471,7 @@ namespace Kinovea.ScreenManager
             mnuCloseFile.Text = ScreenManagerLang.Generic_Close;
             mnuCloseFile2.Text = ScreenManagerLang.Generic_Close;
             mnuCloseFile3.Text = ScreenManagerLang.Generic_Close;
+            mnuCloseFile4.Text = ScreenManagerLang.Generic_Close;
             mnuSave.Text = ScreenManagerLang.Generic_SaveKVA;
             mnuSaveAs.Text = ScreenManagerLang.Generic_SaveKVAAs;
             mnuExportVideo.Text = ScreenManagerLang.Generic_ExportVideo;
@@ -1439,9 +1493,13 @@ namespace Kinovea.ScreenManager
             // View
             mnuOnePlayer.Text = ScreenManagerLang.mnuOnePlayer;
             mnuTwoPlayers.Text = ScreenManagerLang.mnuTwoPlayers;
+            mnuThreePlayers.Text = ScreenManagerLang.mnuThreePlayers;
+            mnuFourPlayers.Text = ScreenManagerLang.mnuFourPlayers;
+            mnuFourPlayersRow.Text = ScreenManagerLang.mnuFourPlayersRow;
             mnuOneCapture.Text = ScreenManagerLang.mnuOneCapture;
             mnuTwoCaptures.Text = ScreenManagerLang.mnuTwoCaptures;
             mnuTwoMixed.Text = ScreenManagerLang.mnuTwoMixed;
+            mnuConfigureScreens.Text = ScreenManagerLang.mnuConfigureScreens;
             mnuSwapScreens.Text = ScreenManagerLang.mnuSwapScreens;
             mnuToggleCommonCtrls.Text = ScreenManagerLang.mnuToggleCommonCtrls;
             
@@ -1473,11 +1531,11 @@ namespace Kinovea.ScreenManager
             mnuImportImage.Text = ScreenManagerLang.mnuImportImage;
             mnuTestGrid.Text = ScreenManagerLang.DrawingName_TestGrid;
             mnuCoordinateAxis.Text = ScreenManagerLang.mnuCoordinateSystem;
-            mnuCameraCalibration.Text = ScreenManagerLang.dlgCameraCalibration_Title + "ù";
-            mnuScatterDiagram.Text = ScreenManagerLang.DataAnalysis_ScatterDiagram + "ù";
-            mnuTrajectoryAnalysis.Text = ScreenManagerLang.DataAnalysis_LinearKinematics + "ù";
-            mnuAngularAnalysis.Text = ScreenManagerLang.DataAnalysis_AngularKinematics + "ù";
-            mnuAngleAngleAnalysis.Text = ScreenManagerLang.DataAnalysis_AngleAngleDiagrams + "ù";
+            mnuCameraCalibration.Text = ScreenManagerLang.dlgCameraCalibration_Title + "...";
+            mnuScatterDiagram.Text = ScreenManagerLang.DataAnalysis_ScatterDiagram + "...";
+            mnuTrajectoryAnalysis.Text = ScreenManagerLang.DataAnalysis_LinearKinematics + "...";
+            mnuAngularAnalysis.Text = ScreenManagerLang.DataAnalysis_AngularKinematics + "...";
+            mnuAngleAngleAnalysis.Text = ScreenManagerLang.DataAnalysis_AngleAngleDiagrams + "...";
         }
             
         private void RefreshCultureMenuFilters()
@@ -1506,6 +1564,10 @@ namespace Kinovea.ScreenManager
         private void mnuCloseFile3OnClick(object sender, EventArgs e)
         {
             CloseFileFromMenu(sender, 2);
+        }
+        private void mnuCloseFile4OnClick(object sender, EventArgs e)
+        {
+            CloseFileFromMenu(sender, 3);
         }
         private void CloseFileFromMenu(object sender, int defaultIndex)
         {
@@ -1652,14 +1714,13 @@ namespace Kinovea.ScreenManager
         private void mnuHome_OnClick(object sender, EventArgs e)
         {
             // Remove all screens.
-            if(screenList.Count <= 0)
+            if (screenList.Count <= 0)
                 return;
-            
-            if(ScreenRemover.RemoveScreen(this, 0))
-            {   
-                // Second screen is now in [0] spot.
-                if(screenList.Count > 0)
-                    ScreenRemover.RemoveScreen(this, 0);
+
+            while (screenList.Count > 0)
+            {
+                if (!ScreenRemover.RemoveScreen(this, 0))
+                    break;
             }
 
             OrganizeScreens();
@@ -1668,429 +1729,31 @@ namespace Kinovea.ScreenManager
         }
         private void mnuOnePlayerOnClick(object sender, EventArgs e)
         {
-            //------------------------------------------------------------
-            // - Reorganize the list so it conforms to the asked combination.
-            // - Display the new list.
-            // 
-            // Here : One player screen.
-            //------------------------------------------------------------
-
-            if (!RemoveScreensFromEnd(2))
-                return;
-
-            switch (screenList.Count)
-            {
-                case 0:
-                    {
-                        AddPlayerScreen();
-                        break;
-                    }
-                case 1:
-                    {
-                        if(screenList[0] is CaptureScreen)
-                        {
-                            // Currently : 1 capture. -> remove and add a player.
-                            ScreenRemover.RemoveScreen(this, 0);
-                            AddPlayerScreen();
-                        }
-                        else
-                        {
-                            // Currently : 1 player. -> do nothing.
-                        }
-                        break;
-                    }
-                case 2:
-                    {
-                        // We need to decide which screen(s) to remove.
-                        // Possible cases :
-                        // [capture][capture] -> remove both and add player.
-                        // [capture][player] -> remove capture.
-                        // [player][capture] -> remove capture.	
-                        // [player][player] -> depends on emptiness.
-                        
-                        if(screenList[0] is CaptureScreen && screenList[1] is CaptureScreen)
-                        {
-                            // [capture][capture] -> remove both and add player.
-                            ScreenRemover.RemoveScreen(this, 0);
-                            ScreenRemover.RemoveScreen(this, 0);
-                            AddPlayerScreen();
-                        }
-                        else if(screenList[0] is CaptureScreen && screenList[1] is PlayerScreen)
-                        {
-                            // [capture][player] -> remove capture.	
-                            ScreenRemover.RemoveScreen(this, 0);
-                        }
-                        else if(screenList[0] is PlayerScreen && screenList[1] is CaptureScreen)
-                        {
-                            // [player][capture] -> remove capture.	
-                            ScreenRemover.RemoveScreen(this, 1);
-                        }
-                        else
-                        {
-                            //---------------------------------------------
-                            // [player][player] -> depends on emptiness :
-                            // 
-                            // [empty][full] -> remove empty. 
-                            // [full][full] -> remove second one (right).
-                            // [full][empty] -> remove empty (right).
-                            // [empty][empty] -> remove second one (right).
-                            //---------------------------------------------
-                            
-                            if(!screenList[0].Full && screenList[1].Full)
-                                ScreenRemover.RemoveScreen(this, 0);
-                            else
-                                ScreenRemover.RemoveScreen(this, 1);
-                        }
-                        break;
-                    }
-                default:
-                    break;
-            }
-
-            OrganizeScreens();
-            OrganizeCommonControls();
-            OrganizeMenus();
+            ApplyLayout(ScreenLayoutSpec.Playback(1));
         }
         private void mnuTwoPlayersOnClick(object sender, EventArgs e)
         {
-            //------------------------------------------------------------
-            // - Reorganize the list so it conforms to the asked combination.
-            // - Display the new list.
-            // 
-            // Here : Two player screens.
-            //------------------------------------------------------------
-
-            if (!RemoveScreensFromEnd(2))
-                return;
-
-            switch (screenList.Count)
-            {
-                case 0:
-                    {
-                        // Currently : 0 screens. -> add two players.
-                        // We use two different commands to keep the undo history working.
-                        AddPlayerScreen();
-                        AddPlayerScreen();
-                        break;
-                    }
-                case 1:
-                    {
-                        if(screenList[0] is CaptureScreen)
-                        {
-                            // Currently : 1 capture. -> remove and add 2 players.
-                            ScreenRemover.RemoveScreen(this, 0);
-                            AddPlayerScreen();
-                            AddPlayerScreen();
-                        }
-                        else
-                        {
-                            // Currently : 1 player. -> add another.
-                            AddPlayerScreen();
-                        }                    
-                        break;
-                    }
-                case 2:
-                    {
-                        // We need to decide which screen(s) to remove.
-                        // Possible cases :
-                        // [capture][capture] -> remove both and add two players.
-                        // [capture][player] -> remove capture and add player.
-                        // [player][capture] -> remove capture and add player.	
-                        // [player][player] -> do nothing.
-                        
-                        if(screenList[0] is CaptureScreen && screenList[1] is CaptureScreen)
-                        {
-                            // [capture][capture] -> remove both and add two players.
-                            ScreenRemover.RemoveScreen(this, 0);
-                            ScreenRemover.RemoveScreen(this, 0);
-                            AddPlayerScreen();
-                            AddPlayerScreen();
-                        }
-                        else if(screenList[0] is CaptureScreen && screenList[1] is PlayerScreen)
-                        {
-                            // [capture][player] -> remove capture and add player.
-                            ScreenRemover.RemoveScreen(this, 0);
-                            AddPlayerScreen();
-                        }
-                        else if(screenList[0] is PlayerScreen && screenList[1] is CaptureScreen)
-                        {
-                            // [player][capture] -> remove capture and add player.
-                            ScreenRemover.RemoveScreen(this, 1);
-                            AddPlayerScreen();
-                        }
-                        else
-                        {
-                            // [player][player] -> do nothing.
-                        }
-                        
-                        break;
-                    }
-                default:
-                    break;
-            }
-
-            OrganizeScreens();
-            OrganizeCommonControls();
-            OrganizeMenus();
+            ApplyLayout(ScreenLayoutSpec.Playback(2));
         }
         private void mnuOneCaptureOnClick(object sender, EventArgs e)
         {
-            //------------------------------------------------------------
-            // - Reorganize the list so it conforms to the asked combination.
-            // - Display the new list.
-            // 
-            // Here : One capture screens.
-            //------------------------------------------------------------
-            
-            if (!RemoveScreensFromEnd(2))
-                return;
-
-            switch (screenList.Count)
-            {
-                case 0:
-                    {
-                        // Currently : 0 screens. -> add a capture.
-                        AddCaptureScreen();
-                        break;
-                    }
-                case 1:
-                    {
-                        if(screenList[0] is PlayerScreen)
-                        {
-                            // Currently : 1 player. -> remove and add a capture.
-                            if(ScreenRemover.RemoveScreen(this, 0))
-                                AddCaptureScreen();
-                        }
-                        else
-                        {
-                            // Currently : 1 capture. -> do nothing.
-                        }
-                        break;
-                    }
-                case 2:
-                    {
-                        // We need to decide which screen(s) to remove.
-                        // Possible cases :
-                        // [capture][capture] -> depends on emptiness.
-                        // [capture][player] -> remove player.
-                        // [player][capture] -> remove player.	
-                        // [player][player] -> remove both and add capture.
-                        
-                        if(screenList[0] is CaptureScreen && screenList[1] is CaptureScreen)
-                        {
-                            //---------------------------------------------
-                            // [capture][capture] -> depends on emptiness.
-                            // 
-                            // [empty][full] -> remove empty.
-                            // [full][full] -> remove second one (right).
-                            // [full][empty] -> remove empty (right).
-                            // [empty][empty] -> remove second one (right).
-                            //---------------------------------------------
-                            
-                            if(!screenList[0].Full && screenList[1].Full)
-                                ScreenRemover.RemoveScreen(this, 0);
-                            else
-                                ScreenRemover.RemoveScreen(this, 1);
-                        }
-                        else if(screenList[0] is CaptureScreen && screenList[1] is PlayerScreen)
-                        {
-                            // [capture][player] -> remove player.	
-                            ScreenRemover.RemoveScreen(this, 1);
-                        }
-                        else if(screenList[0] is PlayerScreen && screenList[1] is CaptureScreen)
-                        {
-                            // [player][capture] -> remove player.
-                            ScreenRemover.RemoveScreen(this, 0);
-                        }
-                        else
-                        {
-                            // remove both and add one capture.
-                            if(ScreenRemover.RemoveScreen(this, 0))
-                            {
-                                // remaining player has moved in [0] spot.
-                                if(ScreenRemover.RemoveScreen(this, 0))
-                                    AddCaptureScreen();
-                            }
-                        }
-                        break;
-                    }
-                default:
-                    break;
-            }
-
-            AfterSharedBufferChange();
-            
-            OrganizeScreens();
-            OrganizeCommonControls();
-            OrganizeMenus();
+            ApplyLayout(ScreenLayoutSpec.Capture(1));
         }
         private void mnuTwoCapturesOnClick(object sender, EventArgs e)
         {
-            //------------------------------------------------------------
-            // - Reorganize the list so it conforms to the asked combination.
-            // - Display the new list.
-            // 
-            // Here : Two capture screens.
-            //------------------------------------------------------------
-            
-            if (!RemoveScreensFromEnd(2))
-                return;
-
-            switch (screenList.Count)
-            {
-                case 0:
-                    {
-                        // Currently : 0 screens. -> add two capture.
-                        AddCaptureScreen();
-                        AddCaptureScreen();
-                        break;
-                    }
-                case 1:
-                    {
-                        if(screenList[0] is CaptureScreen)
-                        {
-                            // Currently : 1 capture. -> add another.
-                            AddCaptureScreen();
-                        }
-                        else
-                        {
-                            // Currently : 1 player. -> remove and add 2 capture.
-                            if(ScreenRemover.RemoveScreen(this, 0))
-                            {
-                                AddCaptureScreen();
-                                AddCaptureScreen();
-                            }
-                        }                   
-                        break;
-                    }
-                case 2:
-                    {
-                        // We need to decide which screen(s) to remove.
-                        // Possible cases :
-                        // [capture][capture] -> do nothing.
-                        // [capture][player] -> remove player and add capture.
-                        // [player][capture] -> remove player and add capture.	
-                        // [player][player] -> remove both and add 2 capture.
-                        
-                        if(screenList[0] is CaptureScreen && screenList[1] is CaptureScreen)
-                        {
-                            // [capture][capture] -> do nothing.
-                        }
-                        else if(screenList[0] is CaptureScreen && screenList[1] is PlayerScreen)
-                        {
-                            // [capture][player] -> remove player and add capture.
-                            if(ScreenRemover.RemoveScreen(this, 1))
-                                AddCaptureScreen();
-                        }
-                        else if(screenList[0] is PlayerScreen && screenList[1] is CaptureScreen)
-                        {
-                            // [player][capture] -> remove player and add capture.
-                            if(ScreenRemover.RemoveScreen(this, 0))
-                                AddCaptureScreen();
-                        }
-                        else
-                        {
-                            // [player][player] -> remove both and add 2 capture.
-                            if(ScreenRemover.RemoveScreen(this, 0))
-                            {
-                                // remaining player has moved in [0] spot.
-                                if(ScreenRemover.RemoveScreen(this, 0))
-                                {
-                                    AddCaptureScreen();
-                                    AddCaptureScreen();
-                                }
-                            }
-                        }
-                        
-                        break;
-                    }
-                default:
-                    break;
-            }
-            
-            AfterSharedBufferChange();
-            
-            OrganizeScreens();
-            OrganizeCommonControls();
-            OrganizeMenus();
+            ApplyLayout(ScreenLayoutSpec.Capture(2));
         }
         private void mnuTwoMixedOnClick(object sender, EventArgs e)
         {
-            //------------------------------------------------------------
-            // - Reorganize the list so it conforms to the asked combination.
-            // - Display the new list.
-            // 
-            // Here : Mixed screen. The workspace preset is : [capture][player]
-            //------------------------------------------------------------
-            
-            if (!RemoveScreensFromEnd(2))
-                return;
-
-            switch (screenList.Count)
-            {
-                case 0:
-                    {
-                        // Currently : 0 screens. -> add a capture and a player.
-                        AddCaptureScreen();
-                        AddPlayerScreen();
-                        break;
-                    }
-                case 1:
-                    {
-                        if(screenList[0] is CaptureScreen)
-                        {
-                            // Currently : 1 capture. -> add a player.
-                            AddPlayerScreen();
-                        }
-                        else
-                        {
-                            // Currently : 1 player. -> add a capture.
-                            AddCaptureScreen();
-                        }
-                        break;
-                    }
-                case 2:
-                    {
-                        // We need to decide which screen(s) to remove/replace.
-                        
-                        if(screenList[0] is CaptureScreen && screenList[1] is CaptureScreen)
-                        {
-                            // [capture][capture] -> remove right and add player.
-                            ScreenRemover.RemoveScreen(this, 1);
-                            AddPlayerScreen();
-                        }
-                        else if(screenList[0] is CaptureScreen && screenList[1] is PlayerScreen)
-                        {
-                            // [capture][player] -> do nothing.
-                        }
-                        else if(screenList[0] is PlayerScreen && screenList[1] is CaptureScreen)
-                        {
-                            // [player][capture] -> do nothing.
-                        }
-                        else
-                        {
-                            // [player][player] -> remove right and add capture.
-                            if(ScreenRemover.RemoveScreen(this, 1))
-                                AddCaptureScreen();
-                        }
-                        
-                        break;
-                    }
-                default:
-                    break;
-            }
-
-            AfterSharedBufferChange();
-            
-            OrganizeScreens();
-            OrganizeCommonControls();
-            OrganizeMenus();
+            ApplyLayout(new ScreenLayoutSpec(new ScreenType[] { ScreenType.Capture, ScreenType.Playback }));
         }
         private void mnuSwapScreensOnClick(object sender, EventArgs e)
         {
             if (screenList.Count != 2)
                 return;
 
+            // Do not call OrganizeCommonControls here: ScreenListChanged would Exit/Enter
+            // and clear an active sync group. SwapSync keeps sync and updates hairlines/slots.
             SwapScreens();
             OrganizeScreens();
             OrganizeMenus();
@@ -2430,7 +2093,9 @@ namespace Kinovea.ScreenManager
                 }
             }
 
-            dualLaunchSettingsPendingCountdown = reloaded;
+            // Only player screens raise SelectionChanged used to commit dual sync.
+            dualLaunchSettingsPendingCountdown = LaunchSettingsManager.ScreenDescriptions
+                .OfType<ScreenDescriptionPlayback>().Count();
 
             if (reloaded > 0)
             {
@@ -2509,6 +2174,97 @@ namespace Kinovea.ScreenManager
         #endregion
 
         #region Screen organization
+        private void mnuConfigureScreens_Click(object sender, EventArgs e)
+        {
+            using (FormScreenLayout form = new FormScreenLayout(GetCurrentLayoutSpec()))
+            {
+                if (form.ShowDialog(view) == DialogResult.OK)
+                    ApplyLayout(form.LayoutSpec);
+            }
+        }
+
+        private ScreenLayoutSpec GetCurrentLayoutSpec()
+        {
+            List<ScreenType> types = new List<ScreenType>();
+            foreach (AbstractScreen screen in screenList)
+                types.Add(screen is CaptureScreen ? ScreenType.Capture : ScreenType.Playback);
+
+            if (types.Count == 0)
+                return ScreenLayoutSpec.Playback(1);
+
+            SyncLayoutGridToScreenCount();
+            return new ScreenLayoutSpec(types, layoutColumns, layoutRows);
+        }
+
+        public bool ApplyLayout(ScreenLayoutSpec spec)
+        {
+            if (spec == null)
+                return false;
+
+            for (int i = screenList.Count - 1; i >= spec.ScreenCount; i--)
+            {
+                if (!ScreenRemover.RemoveScreen(this, i))
+                    return false;
+            }
+
+            for (int i = 0; i < spec.ScreenCount; i++)
+            {
+                Type expectedType = spec.ScreenTypes[i] == ScreenType.Capture ? typeof(CaptureScreen) : typeof(PlayerScreen);
+                AbstractScreen current = GetScreenAt(i);
+                if (current != null && current.GetType() == expectedType)
+                    continue;
+
+                if (current != null && !ScreenRemover.RemoveScreen(this, i))
+                    return false;
+
+                AbstractScreen replacement = spec.ScreenTypes[i] == ScreenType.Capture ?
+                    (AbstractScreen)new CaptureScreen() : new PlayerScreen();
+                replacement.RefreshUICulture();
+                AddScreenAt(replacement, i);
+            }
+
+            layoutColumns = spec.Columns;
+            layoutRows = spec.Rows;
+
+            AfterSharedBufferChange();
+            OrganizeScreens();
+            OrganizeCommonControls();
+            OrganizeMenus();
+
+            if (canShowCommonControls)
+                ResetSync();
+
+            return true;
+        }
+
+        private void SyncLayoutGridToScreenCount()
+        {
+            int count = screenList.Count;
+            if (count == 0)
+            {
+                layoutColumns = 1;
+                layoutRows = 1;
+                return;
+            }
+
+            if (layoutColumns * layoutRows != count)
+                ScreenLayoutSpec.GetDefaultGrid(count, out layoutColumns, out layoutRows);
+        }
+
+        private void AddScreenAt(AbstractScreen screen, int index)
+        {
+            if (!CanAddScreen())
+                return;
+
+            // We are about to insert a screen, signal it to existing capture screens for buffer memory management.
+            int captureScreenCount = CaptureScreenCount + (screen is CaptureScreen ? 1 : 0);
+            foreach (CaptureScreen captureScreen in captureScreens)
+                captureScreen.SetShared(captureScreenCount);
+
+            AddScreenEventHandlers(screen);
+            screenList.Insert(Math.Min(index, screenList.Count), screen);
+        }
+
         /// <summary>
         /// Disable synchronization or reset it to the screens' time origins.
         /// This should be called any time the screen list change, working zones change, dual controls visiblity changes.

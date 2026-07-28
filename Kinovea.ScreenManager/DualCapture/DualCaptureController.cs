@@ -43,8 +43,9 @@ namespace Kinovea.ScreenManager
         #region Public methods
         public void ScreenListChanged(List<AbstractScreen> screenList)
         {
-            if (screenList.Count == 2 && screenList[0] is CaptureScreen && screenList[1] is CaptureScreen)
-                Enter(screenList);
+            List<CaptureScreen> captureScreens = screenList.OfType<CaptureScreen>().ToList();
+            if (captureScreens.Count >= 2)
+                Enter(captureScreens);
             else
                 Exit();
         }
@@ -71,13 +72,12 @@ namespace Kinovea.ScreenManager
         #endregion
 
         #region Entering/Exiting dual capture management
-        private void Enter(List<AbstractScreen> screenList)
+        private void Enter(List<CaptureScreen> captureScreens)
         {
             Exit();
 
             screens.Clear();
-            screens.Add((CaptureScreen)screenList[0]);
-            screens.Add((CaptureScreen)screenList[1]);
+            screens.AddRange(captureScreens);
 
             foreach (CaptureScreen screen in screens)
             {

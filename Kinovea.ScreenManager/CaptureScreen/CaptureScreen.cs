@@ -181,6 +181,7 @@ namespace Kinovea.ScreenManager
         private MetadataWatcher metadataWatcher = new MetadataWatcher();
 
         private bool shared;
+        private int sharedScreenCount = 1;
         private bool synched;
         private int index;
         
@@ -250,8 +251,14 @@ namespace Kinovea.ScreenManager
 
         public void SetShared(bool shared)
         {
-            log.DebugFormat("Set shared: {0}", shared);
-            this.shared = shared;
+            SetShared(shared ? 2 : 1);
+        }
+
+        public void SetShared(int screenCount)
+        {
+            sharedScreenCount = Math.Max(1, screenCount);
+            shared = sharedScreenCount > 1;
+            log.DebugFormat("Set shared: {0}, capture screens: {1}", shared, sharedScreenCount);
             AllocateDelayer();
         }
 
@@ -1956,14 +1963,22 @@ namespace Kinovea.ScreenManager
                 return false;
 
             long totalMemoryMB = (long)PreferencesManager.CapturePreferences.CaptureMemoryBuffer;
-            long availableMemory = shared ? totalMemoryMB / 2 : totalMemoryMB;
-            log.DebugFormat("Allocating or reallocating delay buffer for {0}. Shared: {1}, Available memory: {2}/{3}", cameraSummary.Alias, shared, availableMemory, totalMemoryMB);
+            long availableMemory = totalMemoryMB / sharedScreenCount;
+            log.DebugFormat("Allocating or reallocating delay buffer for {0}. Shared: {1}, Capture screens: {2}, Available memory: {3}/{4}", cameraSummary.Alias, shared, sharedScreenCount, availableMemory, totalMemoryMB);
 
             long megabyte = 1024 * 1024;
             availableMemory *= megabyte;
 
             // FIXME: get the size of ring buffer from outside.
             availableMemory -= (imageDescriptor.BufferSize * 8);
+            long minimumDelayMemory = imageDescriptor.BufferSize * 3L;
+            if (availableMemory < minimumDelayMemory)
+            {
+                log.WarnFormat("Not enough capture memory for the minimum delay buffer. Available: {0}, required: {1}.", Math.Max(0, availableMemory), minimumDelayMemory);
+                delayer.FreeAll();
+                UpdateDelayMaxAge();
+                return false;
+            }
 
             if (!delayer.NeedsReallocation(imageDescriptor, availableMemory))
             {

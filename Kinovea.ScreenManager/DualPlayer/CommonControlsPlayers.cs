@@ -21,6 +21,7 @@ along with Kinovea. If not, see http://www.gnu.org/licenses/.
 #endregion
 
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using Kinovea.ScreenManager.Languages;
@@ -83,6 +84,12 @@ namespace Kinovea.ScreenManager
         #endregion
         
         #region Public methods
+        public void SetSwapEnabled(bool enabled)
+        {
+            btnSwap.Enabled = enabled;
+            btnSwap.Visible = enabled;
+        }
+
         public void RefreshUICulture()
         {
             // Labels
@@ -134,6 +141,11 @@ namespace Kinovea.ScreenManager
 
             trkFrame.UpdatePlayHeadMarkers();
             trkFrame.Invalidate();
+        }
+
+        public void UpdateHairlines(IList<long> positions)
+        {
+            trkFrame.UpdateHairlines(positions);
         }
 
         private void UpdateDebug()

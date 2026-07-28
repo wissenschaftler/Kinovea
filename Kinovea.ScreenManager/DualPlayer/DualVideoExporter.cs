@@ -20,8 +20,11 @@ namespace Kinovea.ScreenManager
     public class DualVideoExporter
     {
         private CommonTimeline commonTimeline;
-        private PlayerScreen leftPlayer;
-        private PlayerScreen rightPlayer;
+        private IList<PlayerScreen> players;
+        private IList<int> slotIndices;
+        private int screenCount;
+        private int columns;
+        private int rows;
         private double fileFrameInterval;
         private string dualSaveFileName;
         private bool dualSaveCancelled;
@@ -34,16 +37,44 @@ namespace Kinovea.ScreenManager
 
         public void Export(CommonTimeline commonTimeline, PlayerScreen leftPlayer, PlayerScreen rightPlayer, bool merging)
         {
+            Export(
+                commonTimeline,
+                new PlayerScreen[] { leftPlayer, rightPlayer },
+                new int[] { 0, 1 },
+                2,
+                merging);
+        }
+
+        public void Export(CommonTimeline commonTimeline, IList<PlayerScreen> players, IList<int> slotIndices, int screenCount, bool merging)
+        {
+            int columns;
+            int rows;
+            ScreenLayoutSpec.GetDefaultGrid(screenCount, out columns, out rows);
+            Export(commonTimeline, players, slotIndices, screenCount, columns, rows, merging);
+        }
+
+        public void Export(CommonTimeline commonTimeline, IList<PlayerScreen> players, IList<int> slotIndices, int screenCount, int columns, int rows, bool merging)
+        {
+            ValidateArguments(commonTimeline, players, slotIndices, screenCount);
+
             this.commonTimeline = commonTimeline;
-            this.leftPlayer = leftPlayer;
-            this.rightPlayer = rightPlayer;
+            this.players = new List<PlayerScreen>(players);
+            this.slotIndices = new List<int>(slotIndices);
+            this.screenCount = screenCount;
+            this.columns = columns;
+            this.rows = rows;
             this.merging = merging;
 
             // During saving we move through the common timeline by a time unit based on framerate and high speed factor, but not based on user custom slow motion factor.
             // For the framerate saved in the file metadata we take user custom slow motion into account and not high speed factor.
-            fileFrameInterval = Math.Max(leftPlayer.FrameInterval, rightPlayer.FrameInterval);
+            fileFrameInterval = 0;
+            for (int i = 0; i < players.Count; i++)
+            {
+                if (players[i] != null)
+                    fileFrameInterval = Math.Max(fileFrameInterval, players[i].FrameInterval);
+            }
             
-            dualSaveFileName = GetFilename(leftPlayer, rightPlayer);
+            dualSaveFileName = GetFilename(players);
             if (string.IsNullOrEmpty(dualSaveFileName))
                 return;
 
@@ -60,37 +91,41 @@ namespace Kinovea.ScreenManager
             // Make sure none of the screen will try to update itself.
             // Otherwise it will cause access to the other screen image (in case of merge), which can cause a crash.
             
-            leftPlayer.DualSaveInProgress = true;
-            rightPlayer.DualSaveInProgress = true;
+            SetDualSaveInProgress(true);
+            try
+            {
+                dualSaveProgressBar = new formProgressBar(true);
+                dualSaveProgressBar.Cancel = dualSave_CancelAsked;
+                
+                // The worker thread runs in the background while the UI thread is in the progress bar dialog.
+                // We only continue after these two lines once the video has been saved or the saving cancelled.
+                bgWorkerDualSave.RunWorkerAsync();
+                dualSaveProgressBar.ShowDialog();
 
-            dualSaveProgressBar = new formProgressBar(true);
-            dualSaveProgressBar.Cancel = dualSave_CancelAsked;
-            
-            // The worker thread runs in the background while the UI thread is in the progress bar dialog.
-            // We only continue after these two lines once the video has been saved or the saving cancelled.
-            bgWorkerDualSave.RunWorkerAsync();
-            dualSaveProgressBar.ShowDialog();
-
-            if (dualSaveCancelled)
-                DeleteTemporaryFile(dualSaveFileName);
-
-            leftPlayer.DualSaveInProgress = false;
-            rightPlayer.DualSaveInProgress = false;
+                if (dualSaveCancelled)
+                    DeleteTemporaryFile(dualSaveFileName);
+            }
+            finally
+            {
+                SetDualSaveInProgress(false);
+            }
         }
 
-        private string GetFilename(PlayerScreen leftPlayer, PlayerScreen rightPlayer)
+        private string GetFilename(IList<PlayerScreen> players)
         {
-            SaveFileDialog dlgSave = new SaveFileDialog();
-            dlgSave.Title = ScreenManagerLang.CommandExportVideo_FriendlyName;
-            dlgSave.RestoreDirectory = true;
-            dlgSave.Filter = FilesystemHelper.SaveVideoFilter();
-            dlgSave.FilterIndex = FilesystemHelper.GetFilterIndex(dlgSave.Filter, PreferencesManager.PlayerPreferences.VideoFormat);
-            dlgSave.FileName = String.Format("{0} - {1}", Path.GetFileNameWithoutExtension(leftPlayer.FilePath), Path.GetFileNameWithoutExtension(rightPlayer.FilePath));
+            using (SaveFileDialog dlgSave = new SaveFileDialog())
+            {
+                dlgSave.Title = ScreenManagerLang.CommandExportVideo_FriendlyName;
+                dlgSave.RestoreDirectory = true;
+                dlgSave.Filter = FilesystemHelper.SaveVideoFilter();
+                dlgSave.FilterIndex = FilesystemHelper.GetFilterIndex(dlgSave.Filter, PreferencesManager.PlayerPreferences.VideoFormat);
+                dlgSave.FileName = GetDefaultFilename(players);
 
-            if (dlgSave.ShowDialog() != DialogResult.OK)
-                return null;
+                if (dlgSave.ShowDialog() != DialogResult.OK)
+                    return null;
 
-            return dlgSave.FileName;
+                return dlgSave.FileName;
+            }
         }
 
         private void bgWorkerDualSave_DoWork(object sender, DoWorkEventArgs e)
@@ -102,27 +137,27 @@ namespace Kinovea.ScreenManager
             
             // Get first frame outside the loop to set up the saving context.
             long currentTime = 0;
-            Bitmap composite = GetCompositeImage(currentTime);
-            
-            log.DebugFormat("Composite size: {0}.", composite.Size);
-
-            VideoInfo info = new VideoInfo
+            using (Bitmap composite = GetCompositeImage(currentTime))
             {
-                ReferenceSize = composite.Size
-            };
+                log.DebugFormat("Composite size: {0}.", composite.Size);
 
-            string formatString = FilenameHelper.GetFormatString(dualSaveFileName);
+                VideoInfo info = new VideoInfo
+                {
+                    ReferenceSize = composite.Size
+                };
 
-            SaveResult result = videoFileWriter.OpenSavingContext(dualSaveFileName, info, formatString, fileFrameInterval);
+                string formatString = FilenameHelper.GetFormatString(dualSaveFileName);
 
-            if (result != SaveResult.Success)
-            {
-                e.Result = 2;
-                return;
+                SaveResult result = videoFileWriter.OpenSavingContext(dualSaveFileName, info, formatString, fileFrameInterval);
+
+                if (result != SaveResult.Success)
+                {
+                    e.Result = 2;
+                    return;
+                }
+
+                videoFileWriter.SaveFrame(composite);
             }
-
-            videoFileWriter.SaveFrame(composite);
-            composite.Dispose();
             
             while (currentTime < commonTimeline.LastTime && !dualSaveCancelled)
             {
@@ -135,9 +170,10 @@ namespace Kinovea.ScreenManager
                     break;
                 }
 
-                composite = GetCompositeImage(currentTime);
-                videoFileWriter.SaveFrame(composite);
-                composite.Dispose();
+                using (Bitmap composite = GetCompositeImage(currentTime))
+                {
+                    videoFileWriter.SaveFrame(composite);
+                }
 
                 int percent = (int)((double)currentTime * 100 / commonTimeline.LastTime);
                 bgWorkerDualSave.ReportProgress(percent);
@@ -158,34 +194,37 @@ namespace Kinovea.ScreenManager
 
         private Bitmap GetCompositeImage(long currentTime)
         {
-            Bitmap composite;
-
-            GotoTime(leftPlayer, currentTime);
-            GotoTime(rightPlayer, currentTime);
-
-            Bitmap img1 = leftPlayer.GetFlushedImage();
-
-            if (!merging)
+            List<Bitmap> images = new List<Bitmap>();
+            try
             {
-                Bitmap img2 = rightPlayer.GetFlushedImage();
-                composite = ImageHelper.GetSideBySideComposite(img1, img2, true, true);
-                img2.Dispose();
+                int imageCount = merging ? 1 : players.Count;
+                for (int i = 0; i < imageCount; i++)
+                {
+                    PlayerScreen player = players[i];
+                    if (player == null)
+                    {
+                        images.Add(null);
+                        continue;
+                    }
+
+                    GotoTime(player, currentTime);
+                    images.Add(player.GetFlushedImage());
+                }
+
+                IList<int> effectiveSlotIndices = merging ? new int[] { 0 } : slotIndices;
+                int effectiveScreenCount = merging ? 1 : screenCount;
+                int effectiveColumns = merging ? 1 : columns;
+                int effectiveRows = merging ? 1 : rows;
+                return ImageHelper.GetComposite(images, effectiveSlotIndices, effectiveScreenCount, effectiveColumns, effectiveRows, true);
             }
-            else
+            finally
             {
-                int height = img1.Height;
-
-                if (img1.Height % 2 != 0)
-                    height++;
-
-                composite = new Bitmap(img1.Width, height, img1.PixelFormat);
-                Graphics g = Graphics.FromImage(composite);
-                g.DrawImage(img1, Point.Empty);
+                for (int i = 0; i < images.Count; i++)
+                {
+                    if (images[i] != null)
+                        images[i].Dispose();
+                }
             }
-
-            img1.Dispose();
-            
-            return composite;
         }
 
         private void bgWorkerDualSave_ProgressChanged(object sender, ProgressChangedEventArgs e)
@@ -240,6 +279,58 @@ namespace Kinovea.ScreenManager
                 log.Error(exp.Message);
                 log.Error(exp.StackTrace);
             }
+        }
+
+        private static string GetDefaultFilename(IList<PlayerScreen> players)
+        {
+            List<string> names = new List<string>();
+            for (int i = 0; i < players.Count; i++)
+            {
+                if (players[i] != null)
+                    names.Add(Path.GetFileNameWithoutExtension(players[i].FilePath));
+            }
+
+            return String.Join(" - ", names.ToArray());
+        }
+
+        private void SetDualSaveInProgress(bool value)
+        {
+            for (int i = 0; i < players.Count; i++)
+            {
+                if (players[i] != null)
+                    players[i].DualSaveInProgress = value;
+            }
+        }
+
+        private static void ValidateArguments(CommonTimeline commonTimeline, IList<PlayerScreen> players, IList<int> slotIndices, int screenCount)
+        {
+            if (commonTimeline == null)
+                throw new ArgumentNullException("commonTimeline");
+            if (players == null)
+                throw new ArgumentNullException("players");
+            if (slotIndices == null)
+                throw new ArgumentNullException("slotIndices");
+            if (players.Count == 0)
+                throw new ArgumentException("At least one player is required.", "players");
+            if (players.Count != slotIndices.Count)
+                throw new ArgumentException("Players and slot indices must have the same count.");
+            if (screenCount < 1 || screenCount > 4)
+                throw new ArgumentOutOfRangeException("screenCount", "Screen count must be between 1 and 4.");
+
+            bool[] usedSlots = new bool[screenCount];
+            for (int i = 0; i < slotIndices.Count; i++)
+            {
+                int slotIndex = slotIndices[i];
+                if (slotIndex < 0 || slotIndex >= screenCount)
+                    throw new ArgumentOutOfRangeException("slotIndices", "A slot index is outside the layout.");
+                if (usedSlots[slotIndex])
+                    throw new ArgumentException("Slot indices must be unique.", "slotIndices");
+
+                usedSlots[slotIndex] = true;
+            }
+
+            if (players[0] == null)
+                throw new ArgumentException("The first player cannot be null.", "players");
         }
         
     }

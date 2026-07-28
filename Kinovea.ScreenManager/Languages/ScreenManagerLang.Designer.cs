@@ -3119,6 +3119,54 @@ namespace Kinovea.ScreenManager.Languages {
                 return ResourceManager.GetString("mnuTwoPlayers", resourceCulture);
             }
         }
+
+        public static string mnuThreePlayers {
+            get { return ResourceManager.GetString("mnuThreePlayers", resourceCulture); }
+        }
+
+        public static string mnuFourPlayers {
+            get { return ResourceManager.GetString("mnuFourPlayers", resourceCulture); }
+        }
+
+        public static string mnuFourPlayersRow {
+            get { return ResourceManager.GetString("mnuFourPlayersRow", resourceCulture); }
+        }
+
+        public static string mnuConfigureScreens {
+            get { return ResourceManager.GetString("mnuConfigureScreens", resourceCulture); }
+        }
+
+        public static string ScreenLayout_Title {
+            get { return ResourceManager.GetString("ScreenLayout_Title", resourceCulture); }
+        }
+
+        public static string ScreenLayout_Count {
+            get { return ResourceManager.GetString("ScreenLayout_Count", resourceCulture); }
+        }
+
+        public static string ScreenLayout_Screen {
+            get { return ResourceManager.GetString("ScreenLayout_Screen", resourceCulture); }
+        }
+
+        public static string ScreenLayout_Playback {
+            get { return ResourceManager.GetString("ScreenLayout_Playback", resourceCulture); }
+        }
+
+        public static string ScreenLayout_Capture {
+            get { return ResourceManager.GetString("ScreenLayout_Capture", resourceCulture); }
+        }
+
+        public static string ScreenLayout_Arrangement {
+            get { return ResourceManager.GetString("ScreenLayout_Arrangement", resourceCulture); }
+        }
+
+        public static string ScreenLayout_Arrangement_2x2 {
+            get { return ResourceManager.GetString("ScreenLayout_Arrangement_2x2", resourceCulture); }
+        }
+
+        public static string ScreenLayout_Arrangement_1x4 {
+            get { return ResourceManager.GetString("ScreenLayout_Arrangement_1x4", resourceCulture); }
+        }
         
         /// <summary>
         ///   Looks up a localized string similar to Configure custom fading.

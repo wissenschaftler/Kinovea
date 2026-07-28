@@ -22,6 +22,7 @@ using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Collections.Generic;
 
 namespace Kinovea.ScreenManager
 {
@@ -97,72 +98,165 @@ namespace Kinovea.ScreenManager
         }
         public static Bitmap GetSideBySideComposite(Bitmap leftImage, Bitmap rightImage, bool video, bool horizontal)
         {
-            Bitmap composite = null;
-            
-            if (horizontal)
+            IList<Bitmap> images = new Bitmap[] { leftImage, rightImage };
+            IList<int> slotIndices = new int[] { 0, 1 };
+            return GetComposite(images, slotIndices, video, horizontal ? 2 : 1, horizontal ? 1 : 2);
+        }
+
+        public static Bitmap GetComposite(IList<Bitmap> images, int screenCount, bool video)
+        {
+            if (images == null)
+                throw new ArgumentNullException("images");
+
+            int[] slotIndices = new int[images.Count];
+            for (int i = 0; i < slotIndices.Length; i++)
+                slotIndices[i] = i;
+
+            return GetComposite(images, slotIndices, screenCount, video);
+        }
+
+        public static Bitmap GetComposite(IList<Bitmap> images, IList<int> slotIndices, int screenCount, bool video)
+        {
+            int columns;
+            int rows;
+            ScreenLayoutSpec.GetDefaultGrid(screenCount, out columns, out rows);
+            return GetComposite(images, slotIndices, screenCount, columns, rows, video);
+        }
+
+        public static Bitmap GetComposite(IList<Bitmap> images, IList<int> slotIndices, int screenCount, int columns, int rows, bool video)
+        {
+            ValidateCompositeArguments(images, slotIndices, screenCount);
+
+            if (columns <= 0 || rows <= 0 || columns * rows != screenCount)
+                ScreenLayoutSpec.GetDefaultGrid(screenCount, out columns, out rows);
+
+            return GetComposite(images, slotIndices, video, columns, rows);
+        }
+
+        private static Bitmap GetComposite(IList<Bitmap> images, IList<int> slotIndices, bool video, int columns, int rows)
+        {
+            int cellWidth = 0;
+            int cellHeight = 0;
+
+            for (int i = 0; i < images.Count; i++)
             {
-                // Create the output image.
-                int height = Math.Max(leftImage.Height, rightImage.Height);
-                int width = leftImage.Width + rightImage.Width;
+                Bitmap image = images[i];
+                if (image == null)
+                    continue;
 
-                if (video)
-                {
-                    if (height % 2 != 0)
-                        height++;
-
-                    if (width % 4 != 0)
-                        width += 4 - (width % 4);
-                }
-
-                composite = new Bitmap(width, height, leftImage.PixelFormat);
-                
-                // Vertically center the shortest image.
-                int leftTop = 0;
-                if(leftImage.Height < height)
-                    leftTop = (height - leftImage.Height) / 2;
-
-                int rightTop = 0;
-                if(rightImage.Height < height)
-                    rightTop = (height - rightImage.Height) / 2;
-                
-                // Draw the images on the output.
-                Graphics g = Graphics.FromImage(composite);
-                g.DrawImage(leftImage, 0, leftTop);
-                g.DrawImage(rightImage, leftImage.Width, rightTop);
+                cellWidth = Math.Max(cellWidth, image.Width);
+                cellHeight = Math.Max(cellHeight, image.Height);
             }
-            else
+
+            if (cellWidth == 0 || cellHeight == 0)
             {
-                // Create the output image.
-                int height = leftImage.Height + rightImage.Height;
-                int width = Math.Max(leftImage.Width, rightImage.Width);
-
-                if (video)
-                {
-                    if (height % 2 != 0)
-                        height++;
-
-                    if (width % 4 != 0)
-                        width += 4 - (width % 4);
-                }
-
-                composite = new Bitmap(width, height, leftImage.PixelFormat);
-                
-                // Horizontally center the shortest image.
-                int firstLeft = 0;
-                if(leftImage.Width < width)
-                    firstLeft = (width - leftImage.Width) / 2;
-
-                int secondLeft = 0;
-                if(rightImage.Width < width)
-                    secondLeft = (width - rightImage.Width) / 2;
-                
-                // Draw the images on the output.
-                Graphics g = Graphics.FromImage(composite);
-                g.DrawImage(leftImage, firstLeft, 0);
-                g.DrawImage(rightImage, secondLeft, leftImage.Height);	
+                cellWidth = 1;
+                cellHeight = 1;
             }
-            
+
+            int width = cellWidth * columns;
+            int height = cellHeight * rows;
+            if (video)
+            {
+                if (height % 2 != 0)
+                    height++;
+                if (width % 4 != 0)
+                    width += 4 - width % 4;
+            }
+
+            Bitmap composite = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+            using (Graphics graphics = Graphics.FromImage(composite))
+            {
+                graphics.Clear(Color.Black);
+
+                for (int i = 0; i < images.Count; i++)
+                {
+                    Bitmap image = images[i];
+                    if (image == null)
+                        continue;
+
+                    int slotIndex = slotIndices[i];
+                    int column = slotIndex % columns;
+                    int row = slotIndex / columns;
+                    int left = column * cellWidth + (cellWidth - image.Width) / 2;
+                    int top = row * cellHeight + (cellHeight - image.Height) / 2;
+                    graphics.DrawImageUnscaled(image, left, top);
+                }
+            }
+
             return composite;
+        }
+
+        public static Bitmap GetOverlayComposite(IList<Bitmap> images)
+        {
+            if (images == null || images.Count == 0)
+                return null;
+
+            int width = 0;
+            int height = 0;
+            foreach (Bitmap image in images)
+            {
+                if (image == null)
+                    continue;
+                width = Math.Max(width, image.Width);
+                height = Math.Max(height, image.Height);
+            }
+
+            if (width == 0 || height == 0)
+                return null;
+
+            Bitmap composite = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+            using (Graphics graphics = Graphics.FromImage(composite))
+            {
+                graphics.Clear(Color.Black);
+                int validCount = 0;
+                foreach (Bitmap image in images)
+                {
+                    if (image != null)
+                        validCount++;
+                }
+
+                float alpha = validCount > 0 ? 1.0f / validCount : 1.0f;
+                foreach (Bitmap image in images)
+                {
+                    if (image == null)
+                        continue;
+
+                    using (ImageAttributes attributes = new ImageAttributes())
+                    {
+                        ColorMatrix matrix = new ColorMatrix();
+                        matrix.Matrix33 = alpha;
+                        attributes.SetColorMatrix(matrix);
+                        graphics.DrawImage(image, new Rectangle(0, 0, width, height), 0, 0, image.Width, image.Height, GraphicsUnit.Pixel, attributes);
+                    }
+                }
+            }
+
+            return composite;
+        }
+
+        private static void ValidateCompositeArguments(IList<Bitmap> images, IList<int> slotIndices, int screenCount)
+        {
+            if (images == null)
+                throw new ArgumentNullException("images");
+            if (slotIndices == null)
+                throw new ArgumentNullException("slotIndices");
+            if (images.Count != slotIndices.Count)
+                throw new ArgumentException("Images and slot indices must have the same count.");
+            if (screenCount < 1 || screenCount > 4)
+                throw new ArgumentOutOfRangeException("screenCount", "Screen count must be between 1 and 4.");
+
+            bool[] usedSlots = new bool[screenCount];
+            for (int i = 0; i < slotIndices.Count; i++)
+            {
+                int slotIndex = slotIndices[i];
+                if (slotIndex < 0 || slotIndex >= screenCount)
+                    throw new ArgumentOutOfRangeException("slotIndices", "A slot index is outside the layout.");
+                if (usedSlots[slotIndex])
+                    throw new ArgumentException("Slot indices must be unique.", "slotIndices");
+
+                usedSlots[slotIndex] = true;
+            }
         }
     }
 }

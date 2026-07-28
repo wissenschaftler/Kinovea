@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -30,10 +30,17 @@ namespace Kinovea.ScreenManager
         private bool dynamicSynching;
         private bool dualSaveInProgress;
 
-        private CommonTimeline commonTimeline = new CommonTimeline();   
+        private CommonTimeline commonTimeline = new CommonTimeline();
         private long currentTime;   // current time in common timeline, in microseconds.
         private CommonControlsPlayers view = new CommonControlsPlayers();
         private List<PlayerScreen> players = new List<PlayerScreen>();
+        private List<int> playerSlotIndices = new List<int>();
+        private int layoutScreenCount;
+        private int layoutColumns = 1;
+        private int layoutRows = 1;
+        private PlayerScreen referencePlayer;
+        private Dictionary<PlayerScreen, Bitmap> lastSyncMergeImages = new Dictionary<PlayerScreen, Bitmap>();
+        private List<PlayerScreen> syncMergeImageOrder = new List<PlayerScreen>();
         private int resyncOperations = 0;
         private int maxResyncOperations = 1;
         private HotkeyCommand[] hotkeys;
@@ -67,10 +74,45 @@ namespace Kinovea.ScreenManager
         #region Public methods
         public void ScreenListChanged(List<AbstractScreen> screenList)
         {
-            if (screenList.Count == 2 && screenList[0] is PlayerScreen && screenList[1] is PlayerScreen)
-                Enter(screenList);
+            int columns;
+            int rows;
+            ScreenLayoutSpec.GetDefaultGrid(screenList.Count, out columns, out rows);
+            ScreenListChanged(screenList, columns, rows);
+        }
+
+        public void ScreenListChanged(List<AbstractScreen> screenList, int columns, int rows)
+        {
+            List<PlayerScreen> playerScreens = new List<PlayerScreen>();
+            List<int> slotIndices = new List<int>();
+            for (int i = 0; i < screenList.Count; i++)
+            {
+                PlayerScreen player = screenList[i] as PlayerScreen;
+                if (player == null)
+                    continue;
+
+                playerScreens.Add(player);
+                slotIndices.Add(i);
+            }
+
+            layoutScreenCount = screenList.Count;
+            if (columns <= 0 || rows <= 0 || columns * rows != layoutScreenCount)
+                ScreenLayoutSpec.GetDefaultGrid(layoutScreenCount, out columns, out rows);
+
+            layoutColumns = columns;
+            layoutRows = rows;
+            playerSlotIndices = slotIndices;
+            if (playerScreens.Count >= 2)
+                Enter(playerScreens);
             else
                 Exit();
+        }
+        public void SetReferencePlayer(PlayerScreen player)
+        {
+            if (player != null && players.Contains(player))
+            {
+                referencePlayer = player;
+                UpdateSyncMergeOverlay(true);
+            }
         }
         public void RefreshUICulture()
         {
@@ -93,11 +135,11 @@ namespace Kinovea.ScreenManager
             if (view.Playing)
                 view.Pause();
 
-            if (players[0].IsPlaying)
-                players[0].view.OnButtonPlay();
-
-            if (players[1].IsPlaying)
-                players[1].view.OnButtonPlay();
+            foreach (PlayerScreen player in players)
+            {
+                if (player.IsPlaying)
+                    player.view.OnButtonPlay();
+            }
         }
         public void StopMerge()
         {
@@ -105,26 +147,27 @@ namespace Kinovea.ScreenManager
         }
         public void SwapSync()
         {
-            if (!synching)
+            if (!active || players.Count != 2)
                 return;
 
-            PlayerScreen temp = players[0];
-            players[0] = players[1];
-            players[1] = temp;
+            players.Reverse();
+            if (playerSlotIndices.Count == 2)
+                playerSlotIndices.Reverse();
 
-            UpdateHairLines();
+            if (synching)
+                UpdateHairLines();
         }
         public void CommitLaunchSettings()
         {
             if (!active)
                 return;
 
-            if (!players[0].Full || !players[1].Full)
+            if (players.Any(player => !player.Full))
                 return;
 
             synching = true;
-            players[0].Synched = true;
-            players[1].Synched = true;
+            foreach (PlayerScreen player in players)
+                player.Synched = true;
 
             InitializeSync();
         }
@@ -139,7 +182,7 @@ namespace Kinovea.ScreenManager
 
         private void Player_PlayStarted(object sender, EventArgs e)
         {
-            // If both players are playing, we must activate the dynamic synching, even if they were started independently. 
+            // If both players are playing, we must activate the dynamic synching, even if they were started independently.
             // This way they will continue playing on the next loop, this time in sync.
             if (!active || !synching)
                 return;
@@ -148,21 +191,19 @@ namespace Kinovea.ScreenManager
             if (player == null)
                 return;
 
-            PlayerScreen otherPlayer = GetOtherPlayer(player);
-
-            if (player.IsPlaying && otherPlayer.IsPlaying && !view.Playing)
+            if (players.All(candidate => candidate.IsPlaying) && !view.Playing)
             {
                 // Immediately force synchronization.
                 // This may not fully register for automatically started players, see `resyncOperations`.
-                commonTimeline.Initialize(players[0], players[1]);
-                view.UpdateSyncPosition(commonTimeline.GetCommonTime(players[0], players[0].LocalTimeOriginPhysical));
+                commonTimeline.Initialize(players, referencePlayer);
+                view.UpdateSyncPosition(commonTimeline.GetCommonTime(player, player.LocalTimeOriginPhysical));
 
                 AlignPlayers(false);
 
                 resyncOperations = 0;
                 view.Play();
                 dynamicSynching = true;
-                EnsureBothPlaying();
+                EnsurePlayersPlaying();
             }
         }
 
@@ -175,7 +216,8 @@ namespace Kinovea.ScreenManager
             if (player == null || !PreferencesManager.PlayerPreferences.SyncLockSpeed)
                 return;
 
-            GetOtherPlayer(player).RealtimePercentage = player.RealtimePercentage;
+            foreach (PlayerScreen otherPlayer in players.Where(candidate => candidate != player))
+                otherPlayer.RealtimePercentage = player.RealtimePercentage;
         }
 
         private void Player_TimeOriginChanged(object sender, EventArgs e)
@@ -188,7 +230,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             // Reinit synchronization.
-            commonTimeline.Initialize(players[0], players[1]);
+            commonTimeline.Initialize(players, referencePlayer);
             currentTime = commonTimeline.GetCommonTime(player, player.LocalTime);
             view.SetupTrkFrame(0, commonTimeline.LastTime, currentTime);
             view.UpdateSyncPosition(currentTime);
@@ -202,19 +244,20 @@ namespace Kinovea.ScreenManager
 
             if (PreferencesManager.PlayerPreferences.SyncLockSpeed)
             {
-                double percentage = Math.Min(players[0].RealtimePercentage, players[1].RealtimePercentage);
-                players[0].RealtimePercentage = percentage;
-                players[1].RealtimePercentage = percentage;
+                double percentage = players.Min(player => player.RealtimePercentage);
+                foreach (PlayerScreen player in players)
+                    player.RealtimePercentage = percentage;
             }
 
             // Synchronization must be reinitialized.
-            commonTimeline.Initialize(players[0], players[1]);
+            commonTimeline.Initialize(players, this.referencePlayer);
 
             // TODO: Check if current time is still in bounds.
-            currentTime = Math.Min(currentTime, commonTimeline.GetCommonTime(players[0], players[0].LocalTime));
+            PlayerScreen changedPlayer = sender as PlayerScreen ?? players.First();
+            currentTime = Math.Min(currentTime, commonTimeline.GetCommonTime(changedPlayer, changedPlayer.LocalTime));
 
             view.SetupTrkFrame(0, commonTimeline.LastTime, currentTime);
-            view.UpdateSyncPosition(currentTime); 
+            view.UpdateSyncPosition(currentTime);
         }
 
         private void Player_ImageChanged(object sender, EventArgs<Bitmap> e)
@@ -226,8 +269,6 @@ namespace Kinovea.ScreenManager
             if (player == null)
                 return;
 
-            PlayerScreen otherPlayer = GetOtherPlayer(player);
-
             if (dynamicSynching)
             {
                 if (player.IsPlaying)
@@ -235,10 +276,11 @@ namespace Kinovea.ScreenManager
                     //log.DebugFormat("Received image from [{0}] ({1}).", GetPlayerIndex(player), player.LocalTime / 1000);
                     currentTime = commonTimeline.GetCommonTime(player, player.LocalTime);
 
-                    if (otherPlayer.IsPlaying && resyncOperations < maxResyncOperations)
+                    IEnumerable<PlayerScreen> otherPlayingPlayers = players.Where(candidate => candidate != player && candidate.IsPlaying);
+                    if (otherPlayingPlayers.Any() && resyncOperations < maxResyncOperations)
                     {
                         //----------------------------------------------------------------------------------
-                        // Test for desync. 
+                        // Test for desync.
                         // This is not the primary synchronization mechanism, videos should synchronize naturally from being started
                         // at the right time, based on their time origin and the fact that their playback rate relative to real time should match.
                         //
@@ -246,36 +288,66 @@ namespace Kinovea.ScreenManager
                         // We allow ourselves one attempt at resync here.
                         // This kind of resync can easily misfire and cause judder so it's only used very sparingly.
                         //----------------------------------------------------------------------------------
-                        long otherTime = commonTimeline.GetCommonTime(otherPlayer, otherPlayer.LocalTime);
+                        PlayerScreen mostDivergentPlayer = otherPlayingPlayers
+                            .OrderByDescending(candidate => Math.Abs(currentTime - commonTimeline.GetCommonTime(candidate, candidate.LocalTime)))
+                            .First();
+                        long otherTime = commonTimeline.GetCommonTime(mostDivergentPlayer, mostDivergentPlayer.LocalTime);
                         long divergence = Math.Abs(currentTime - otherTime);
-                        long frameTime = Math.Max(player.LocalFrameTime, otherPlayer.LocalFrameTime);
+                        long frameTime = Math.Max(player.LocalFrameTime, mostDivergentPlayer.LocalFrameTime);
                         if (divergence > frameTime)
                         {
                             resyncOperations++;
 
-                            log.WarnFormat("Synchronization divergence: [{0}]@{1} vs [{2}]@{3}. Resynchronizing.", 
-                                GetPlayerIndex(player), currentTime / 1000, GetPlayerIndex(otherPlayer), otherTime / 1000);
+                            log.WarnFormat("Synchronization divergence: [{0}]@{1} vs [{2}]@{3}. Resynchronizing.",
+                                GetPlayerIndex(player), currentTime / 1000, GetPlayerIndex(mostDivergentPlayer), otherTime / 1000);
 
                             AlignPlayers(true);
                         }
                     }
 
-                    EnsureBothPlaying();
+                    EnsurePlayersPlaying();
                 }
-                else if (!otherPlayer.IsPlaying)
+                else if (players.All(candidate => !candidate.IsPlaying))
                 {
-                    // Both players have completed a loop and are waiting.
+                    // All players have completed a loop and are waiting.
                     currentTime = 0;
-                    EnsureBothPlaying();
+                    EnsurePlayersPlaying();
                 }
             }
 
             UpdateHairLines();
-            
+
             if (!view.Merging || e.Value == null)
                 return;
 
-            otherPlayer.SetSyncMergeImage(e.Value, !dualSaveInProgress);
+            Bitmap previous;
+            if (lastSyncMergeImages.TryGetValue(player, out previous) && previous != null && !object.ReferenceEquals(previous, e.Value))
+                previous.Dispose();
+            lastSyncMergeImages[player] = e.Value;
+            syncMergeImageOrder.Remove(player);
+            syncMergeImageOrder.Add(player);
+
+            UpdateSyncMergeOverlay(!dualSaveInProgress);
+        }
+        private void UpdateSyncMergeOverlay(bool updateUI)
+        {
+            PlayerScreen target = referencePlayer != null && players.Contains(referencePlayer) ? referencePlayer : players.FirstOrDefault();
+            if (target == null)
+                return;
+
+            List<Bitmap> otherImages = players
+                .Where(candidate => candidate != target && lastSyncMergeImages.ContainsKey(candidate))
+                .Select(candidate => lastSyncMergeImages[candidate])
+                .Where(image => image != null)
+                .ToList();
+            Bitmap overlay = view.Merging ? ImageHelper.GetOverlayComposite(otherImages) : null;
+            target.SetSyncMergeImage(overlay, updateUI);
+
+            foreach (PlayerScreen other in players)
+            {
+                if (other != target)
+                    other.SetSyncMergeImage(null, updateUI);
+            }
         }
         #endregion
 
@@ -290,7 +362,7 @@ namespace Kinovea.ScreenManager
                 if (dynamicSynching)
                 {
                     resyncOperations = 0;
-                    EnsureBothPlaying();
+                    EnsurePlayersPlaying();
                 }
             }
 
@@ -343,7 +415,7 @@ namespace Kinovea.ScreenManager
                 if (currentTime < commonTimeline.LastTime)
                 {
                     currentTime += commonTimeline.FrameTime;
-                    
+
                     GotoTime(currentTime, true);
                     UpdateTrkFrame(currentTime);
                 }
@@ -386,8 +458,8 @@ namespace Kinovea.ScreenManager
             log.Debug(String.Format("SyncMerge videos is now {0}", view.Merging.ToString()));
 
             // This will also do a full refresh, and trigger back Player_ImageChanged().
-            players[0].SyncMerge = view.Merging;
-            players[1].SyncMerge = view.Merging;
+            foreach (PlayerScreen player in players)
+                player.SyncMerge = view.Merging;
         }
         private void CCtrl_PositionChanged(object sender, TimeEventArgs e)
         {
@@ -395,7 +467,7 @@ namespace Kinovea.ScreenManager
                 return;
 
             Pause();
-            
+
             currentTime = e.Time;
             GotoTime(currentTime, true);
         }
@@ -409,7 +481,10 @@ namespace Kinovea.ScreenManager
             dualSaveInProgress = true;
 
             DualVideoExporter exporter = new DualVideoExporter();
-            exporter.Export(commonTimeline, players[0], players[1], view.Merging);
+            List<PlayerScreen> exportPlayers;
+            List<int> exportSlots;
+            GetExportOrder(out exportPlayers, out exportSlots);
+            exporter.Export(commonTimeline, exportPlayers, exportSlots, layoutScreenCount, layoutColumns, layoutRows, view.Merging);
 
             dualSaveInProgress = false;
 
@@ -419,9 +494,12 @@ namespace Kinovea.ScreenManager
         {
             if (!synching)
                 return;
-            
+
             Pause();
-            DualSnapshoter.Save(players[0], players[1], view.Merging);
+            List<PlayerScreen> exportPlayers;
+            List<int> exportSlots;
+            GetExportOrder(out exportPlayers, out exportSlots);
+            DualSnapshoter.Save(exportPlayers, exportSlots, layoutScreenCount, layoutColumns, layoutRows, view.Merging);
         }
 
         private void CCtrl_GotoPrevKeyframe(object sender, EventArgs e)
@@ -431,8 +509,8 @@ namespace Kinovea.ScreenManager
             if (!synching)
                 return;
 
-            players[0].GotoPrevKeyframe();
-            players[1].GotoPrevKeyframe();
+            foreach (PlayerScreen player in players)
+                player.GotoPrevKeyframe();
         }
         private void CCtrl_GotoNextKeyframe(object sender, EventArgs e)
         {
@@ -441,8 +519,8 @@ namespace Kinovea.ScreenManager
             if (!synching)
                 return;
 
-            players[0].GotoNextKeyframe();
-            players[1].GotoNextKeyframe();
+            foreach (PlayerScreen player in players)
+                player.GotoNextKeyframe();
         }
         private void CCtrl_AddKeyframe(object sender, EventArgs e)
         {
@@ -451,8 +529,8 @@ namespace Kinovea.ScreenManager
             if (!synching)
                 return;
 
-            players[0].AddKeyframe();
-            players[1].AddKeyframe();
+            foreach (PlayerScreen player in players)
+                player.AddKeyframe();
         }
         private void CCtrl_GotoSync(object sender, EventArgs e)
         {
@@ -460,22 +538,23 @@ namespace Kinovea.ScreenManager
 
             if (!synching)
                 return;
-            
-            currentTime = commonTimeline.GetCommonTime(players[0], players[0].LocalTimeOriginPhysical);
+
+            PlayerScreen effectiveReference = referencePlayer ?? players.First();
+            currentTime = commonTimeline.GetCommonTime(effectiveReference, effectiveReference.LocalTimeOriginPhysical);
             GotoTime(currentTime, true);
             UpdateTrkFrame(currentTime);
         }
-        
+
         #endregion
 
         #region Entering/Exiting dual player management
-        private void Enter(List<AbstractScreen> screenList)
+        private void Enter(IList<PlayerScreen> playerScreens)
         {
             Exit();
 
-            players.Clear();
-            players.Add((PlayerScreen)screenList[0]);
-            players.Add((PlayerScreen)screenList[1]);
+            players.AddRange(playerScreens);
+            if (referencePlayer == null || !players.Contains(referencePlayer))
+                referencePlayer = players.FirstOrDefault();
 
             foreach (PlayerScreen player in players)
                 AddEventHandlers(player);
@@ -486,15 +565,26 @@ namespace Kinovea.ScreenManager
         {
             synching = false;
             dynamicSynching = false;
+            foreach (Bitmap image in lastSyncMergeImages.Values)
+            {
+                if (image != null)
+                    image.Dispose();
+            }
+            lastSyncMergeImages.Clear();
+            syncMergeImageOrder.Clear();
 
             if (active)
             {
                 foreach (PlayerScreen player in players)
+                {
                     RemoveEventHandlers(player);
+                    player.Synched = false;
+                }
 
                 players.Clear();
             }
 
+            referencePlayer = null;
             active = false;
         }
         private void AddEventHandlers(PlayerScreen player)
@@ -512,6 +602,7 @@ namespace Kinovea.ScreenManager
             player.PauseAsked -= Player_PauseAsked;
             player.SpeedChanged -= Player_SpeedChanged;
             player.HighSpeedFactorChanged -= Player_HighSpeedFactorChanged;
+            player.TimeOriginChanged -= Player_TimeOriginChanged;
             player.ImageChanged -= Player_ImageChanged;
         }
         #endregion
@@ -535,8 +626,8 @@ namespace Kinovea.ScreenManager
                 case DualPlayerCommands.GotoNextKeyframe:
                 case DualPlayerCommands.GotoSyncPoint:
                 case DualPlayerCommands.AddKeyframe:
-                    players[0].ExecuteScreenCommand(playerCommand.CommandCode);
-                    players[1].ExecuteScreenCommand(playerCommand.CommandCode);
+                    foreach (PlayerScreen player in players)
+                        player.ExecuteScreenCommand(playerCommand.CommandCode);
                     break;
 
                 default:
@@ -556,24 +647,24 @@ namespace Kinovea.ScreenManager
             dynamicSynching = false;
             Pause();
 
-            if (!players[0].Full || !players[1].Full)
+            if (players.Any(player => !player.Full))
                 return;
 
             synching = true;
-            players[0].Synched = true;
-            players[1].Synched = true;
+            foreach (PlayerScreen player in players)
+                player.Synched = true;
 
             if (PreferencesManager.PlayerPreferences.SyncLockSpeed)
             {
-                double percentage = Math.Min(players[0].RealtimePercentage, players[1].RealtimePercentage);
-                players[0].RealtimePercentage = percentage;
-                players[1].RealtimePercentage = percentage;
+                double percentage = players.Min(player => player.RealtimePercentage);
+                foreach (PlayerScreen player in players)
+                    player.RealtimePercentage = percentage;
             }
 
             InitializeSync();
 
-            players[0].SyncMerge = false;
-            players[1].SyncMerge = false;
+            foreach (PlayerScreen player in players)
+                player.SyncMerge = false;
             StopMerge();
 
             GotoTime(currentTime, true);
@@ -581,10 +672,11 @@ namespace Kinovea.ScreenManager
 
         private void InitializeSync()
         {
-            commonTimeline.Initialize(players[0], players[1]);
+            commonTimeline.Initialize(players, this.referencePlayer);
             currentTime = 0;
             view.SetupTrkFrame(0, commonTimeline.LastTime, currentTime);
-            view.UpdateSyncPosition(commonTimeline.GetCommonTime(players[0], players[0].LocalTimeOriginPhysical));
+            PlayerScreen effectiveReference = this.referencePlayer ?? players.First();
+            view.UpdateSyncPosition(commonTimeline.GetCommonTime(effectiveReference, effectiveReference.LocalTimeOriginPhysical));
             UpdateHairLines();
 
             log.Debug("Synchronization initialized.");
@@ -592,25 +684,26 @@ namespace Kinovea.ScreenManager
 
         private void SetSyncPoint(bool intervalOnly)
         {
-            log.DebugFormat("Resetting time origins. [0]:{0}, [1]{1}", players[0].LocalTime, players[1].LocalTime);
-            players[0].LocalTimeOriginPhysical = players[0].LocalTime;
-            players[1].LocalTimeOriginPhysical = players[1].LocalTime;
+            log.DebugFormat("Resetting time origins for {0} players.", players.Count);
+            foreach (PlayerScreen player in players)
+                player.LocalTimeOriginPhysical = player.LocalTime;
 
-            commonTimeline.Initialize(players[0], players[1]);
-            currentTime = commonTimeline.GetCommonTime(players[0], players[0].LocalTime);
-            
+            commonTimeline.Initialize(players, this.referencePlayer);
+            PlayerScreen effectiveReference = this.referencePlayer ?? players.First();
+            currentTime = commonTimeline.GetCommonTime(effectiveReference, effectiveReference.LocalTime);
+
             view.SetupTrkFrame(0, commonTimeline.LastTime, currentTime);
-            view.UpdateSyncPosition(currentTime); 
+            view.UpdateSyncPosition(currentTime);
         }
 
         private void GotoTime(long commonTime, bool allowUIUpdate)
         {
-            GotoTime(players[0], commonTime, allowUIUpdate);
-            GotoTime(players[1], commonTime, allowUIUpdate);
+            foreach (PlayerScreen player in players)
+                GotoTime(player, commonTime, allowUIUpdate);
 
             UpdateHairLines();
         }
-        
+
         private void GotoTime(PlayerScreen player, long commonTime, bool allowUIUpdate)
         {
             long localTime = commonTimeline.GetLocalTime(player, commonTime);
@@ -622,13 +715,13 @@ namespace Kinovea.ScreenManager
 
         private void UpdateHairLines()
         {
-            long leftTime = commonTimeline.GetCommonTime(players[0], players[0].LocalTime);
-            long rightTime = commonTimeline.GetCommonTime(players[1], players[1].LocalTime);
+            if (players.Count == 0)
+                return;
 
-            view.UpdateHairline(leftTime, true);
-            view.UpdateHairline(rightTime, false);
+            List<long> playerTimes = players.Select(player => commonTimeline.GetCommonTime(player, player.LocalTime)).ToList();
+            view.UpdateHairlines(playerTimes);
         }
-        
+
         /// <summary>
         /// Force both players to align on a common time.
         /// Used if players may have moved independently from the common tracker.
@@ -636,43 +729,50 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private void AlignPlayers(bool catchup)
         {
-            long leftTime = commonTimeline.GetCommonTime(players[0], players[0].LocalTime);
-            long rightTime = commonTimeline.GetCommonTime(players[1], players[1].LocalTime);
+            IEnumerable<long> playerTimes = players.Select(player => commonTimeline.GetCommonTime(player, player.LocalTime));
 
             if (catchup)
-                currentTime = Math.Max(leftTime, rightTime);
+                currentTime = playerTimes.Max();
             else
-                currentTime = Math.Min(leftTime, rightTime);
+                currentTime = playerTimes.Min();
 
             log.DebugFormat("Aligning players to {0}.", currentTime / 1000);
             GotoTime(currentTime, true);
         }
 
-        private void EnsureBothPlaying()
+        private void EnsurePlayersPlaying()
         {
-            EnsurePlaying(0);
-            EnsurePlaying(1);
-        }
-
-        /// <summary>
-        /// Make sure a player is playing if it needs to but does not start it if it shouldn't.
-        /// </summary>
-        private void EnsurePlaying(int index)
-        {
-            if (!players[index].IsPlaying && !commonTimeline.IsOutOfBounds(players[index], currentTime))
-                players[index].EnsurePlaying();
+            foreach (PlayerScreen player in players)
+            {
+                if (!player.IsPlaying && !commonTimeline.IsOutOfBounds(player, currentTime))
+                    player.EnsurePlaying();
+            }
         }
 
         #endregion
 
-        private PlayerScreen GetOtherPlayer(PlayerScreen player)
-        {
-            return player == players[0] ? players[1] : players[0];
-        }
-
         private int GetPlayerIndex(PlayerScreen player)
         {
-            return player == players[0] ? 0 : 1;
+            return players.IndexOf(player);
+        }
+        private void GetExportOrder(out List<PlayerScreen> exportPlayers, out List<int> exportSlots)
+        {
+            exportPlayers = new List<PlayerScreen>();
+            exportSlots = new List<int>();
+            if (referencePlayer != null && players.Contains(referencePlayer))
+            {
+                int index = players.IndexOf(referencePlayer);
+                exportPlayers.Add(referencePlayer);
+                exportSlots.Add(playerSlotIndices[index]);
+            }
+
+            for (int i = 0; i < players.Count; i++)
+            {
+                if (players[i] == referencePlayer)
+                    continue;
+                exportPlayers.Add(players[i]);
+                exportSlots.Add(playerSlotIndices[i]);
+            }
         }
     }
 }

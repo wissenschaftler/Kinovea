@@ -344,6 +344,18 @@
    <data name="mnuTwoCaptures" xml:space="preserve"><value>Two capture screens</value></data>
    <data name="mnuTwoMixed" xml:space="preserve"><value>One capture screen and one playback screen</value></data>
    <data name="mnuTwoPlayers" xml:space="preserve"><value>Two playback screens</value></data>
+   <data name="mnuThreePlayers" xml:space="preserve"><value>Three playback screens</value></data>
+   <data name="mnuFourPlayers" xml:space="preserve"><value>Four playback screens (2×2)</value></data>
+   <data name="mnuFourPlayersRow" xml:space="preserve"><value>Four playback screens (1×4)</value></data>
+   <data name="mnuConfigureScreens" xml:space="preserve"><value>Configure screen layout…</value></data>
+   <data name="ScreenLayout_Title" xml:space="preserve"><value>Configure screen layout</value></data>
+   <data name="ScreenLayout_Count" xml:space="preserve"><value>Number of screens:</value></data>
+   <data name="ScreenLayout_Screen" xml:space="preserve"><value>Screen {0}:</value></data>
+   <data name="ScreenLayout_Playback" xml:space="preserve"><value>Playback</value></data>
+   <data name="ScreenLayout_Capture" xml:space="preserve"><value>Capture</value></data>
+   <data name="ScreenLayout_Arrangement" xml:space="preserve"><value>Arrangement:</value></data>
+   <data name="ScreenLayout_Arrangement_2x2" xml:space="preserve"><value>2 rows × 2 columns</value></data>
+   <data name="ScreenLayout_Arrangement_1x4" xml:space="preserve"><value>1 row × 4 columns</value></data>
    <data name="mnuExportSpreadsheet" xml:space="preserve"><value>Export to spreadsheet</value></data>
    <data name="mnuFormat" xml:space="preserve"><value>Image format</value></data>
    <data name="mnuFormatAuto" xml:space="preserve"><value>Auto detection</value></data>

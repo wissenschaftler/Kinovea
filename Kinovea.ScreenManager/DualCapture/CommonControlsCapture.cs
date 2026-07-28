@@ -63,6 +63,12 @@ namespace Kinovea.ScreenManager
             this.Hotkeys = HotkeySettingsManager.LoadHotkeys("DualCapture");
         }
 
+        public void SetSwapEnabled(bool enabled)
+        {
+            btnSwap.Enabled = enabled;
+            btnSwap.Visible = enabled;
+        }
+
         public void RefreshUICulture()
         {
             // Labels

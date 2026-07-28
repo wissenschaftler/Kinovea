@@ -58,6 +58,7 @@ namespace Kinovea.ScreenManager
                     position = minimum;
                 UpdateMarkersPositions();
                 UpdateSyncPointMarkerPosition();
+                UpdatePlayHeadMarkers();
                 UpdateCursorPosition();
                 Invalidate();
             }
@@ -72,6 +73,7 @@ namespace Kinovea.ScreenManager
                 if (position > maximum) position = maximum;
                 UpdateMarkersPositions();
                 UpdateSyncPointMarkerPosition();
+                UpdatePlayHeadMarkers();
                 UpdateCursorPosition();
                 Invalidate();
             }
@@ -95,12 +97,20 @@ namespace Kinovea.ScreenManager
         public long LeftHairline
         {
             get { return leftHairline; }
-            set { leftHairline = value; }
+            set
+            {
+                leftHairline = value;
+                SetHairline(0, value);
+            }
         }
         public long RightHairline
         {
             get { return rightHairline; }
-            set { rightHairline = value; }
+            set
+            {
+                rightHairline = value;
+                SetHairline(1, value);
+            }
         }
         #endregion
             
@@ -155,10 +165,15 @@ namespace Kinovea.ScreenManager
 
         private long leftHairline;
         private long rightHairline;
-        private int leftPlayHeadMark;
-        private int rightPlayHeadMark;
+        private const int MaximumHairlineCount = 4;
+        private List<long> hairlines = new List<long>();
+        private List<int> playHeadMarks = new List<int>();
         private static readonly Pen penPlayHead = Pens.DarkCyan;
         private static readonly SolidBrush brushPlayHead = new SolidBrush(Color.FromArgb(96, Color.DarkCyan));
+        private static readonly Pen penPlayHeadThird = Pens.DarkOrange;
+        private static readonly SolidBrush brushPlayHeadThird = new SolidBrush(Color.FromArgb(128, Color.DarkOrange));
+        private static readonly Pen penPlayHeadFourth = Pens.MediumVioletRed;
+        private static readonly SolidBrush brushPlayHeadFourth = new SolidBrush(Color.FromArgb(128, Color.MediumVioletRed));
         
         #endregion
         
@@ -211,6 +226,7 @@ namespace Kinovea.ScreenManager
             
             UpdateMarkersPositions();
             UpdateSyncPointMarkerPosition();
+            UpdatePlayHeadMarkers();
             UpdateCursorPosition();
             Invalidate();
         }
@@ -245,13 +261,30 @@ namespace Kinovea.ScreenManager
         }
         public void UpdatePlayHeadMarkers()
         {
-            leftPlayHeadMark = 0;
-            if (leftHairline >= minimum && leftHairline <= maximum)
-                leftPlayHeadMark = GetCoordFromTimestamp(leftHairline);
+            playHeadMarks.Clear();
+            foreach (long hairline in hairlines)
+            {
+                int mark = 0;
+                if (hairline >= minimum && hairline <= maximum)
+                    mark = GetCoordFromTimestamp(hairline);
 
-            rightPlayHeadMark = 0;
-            if (rightHairline >= minimum && rightHairline <= maximum)
-                rightPlayHeadMark = GetCoordFromTimestamp(rightHairline);
+                playHeadMarks.Add(mark);
+            }
+        }
+        public void UpdateHairlines(IList<long> positions)
+        {
+            hairlines.Clear();
+            if (positions != null)
+            {
+                int count = Math.Min(positions.Count, MaximumHairlineCount);
+                for (int i = 0; i < count; i++)
+                    hairlines.Add(positions[i]);
+            }
+
+            leftHairline = hairlines.Count > 0 ? hairlines[0] : 0;
+            rightHairline = hairlines.Count > 1 ? hairlines[1] : 0;
+            UpdatePlayHeadMarkers();
+            Invalidate();
         }
 
         public void UpdateCacheSegmentMarker(VideoSection cacheSegment)
@@ -313,6 +346,7 @@ namespace Kinovea.ScreenManager
             maxWidthPixel = maximumPixel - minimumPixel;
             UpdateMarkersPositions();
             UpdateSyncPointMarkerPosition();
+            UpdatePlayHeadMarkers();
             UpdateCursorPosition();
             Invalidate();
         }
@@ -367,8 +401,8 @@ namespace Kinovea.ScreenManager
                 
                 if (commonTimeline)
                 {
-                    DrawSideMark(canvas, penPlayHead, brushPlayHead, leftPlayHeadMark, true);
-                    DrawSideMark(canvas, penPlayHead, brushPlayHead, rightPlayHeadMark, false);
+                    for (int i = 0; i < playHeadMarks.Count; i++)
+                        DrawPlayHeadMark(canvas, playHeadMarks[i], i);
                 }
                 else
                 {
@@ -438,6 +472,37 @@ namespace Kinovea.ScreenManager
 
             gp.Dispose();
         }
+        private void DrawPlayHeadMark(Graphics canvas, int coord, int index)
+        {
+            if (index == 0)
+                DrawSideMark(canvas, penPlayHead, brushPlayHead, coord, true);
+            else if (index == 1)
+                DrawSideMark(canvas, penPlayHead, brushPlayHead, coord, false);
+            else if (index == 2)
+                DrawTriangleMark(canvas, penPlayHeadThird, brushPlayHeadThird, coord, true);
+            else if (index == 3)
+                DrawTriangleMark(canvas, penPlayHeadFourth, brushPlayHeadFourth, coord, false);
+        }
+        private void DrawTriangleMark(Graphics canvas, Pen border, SolidBrush inside, int coord, bool pointUp)
+        {
+            if (coord <= 0)
+                return;
+
+            float top = 4;
+            float bottom = 14;
+            float point = pointUp ? top : bottom;
+            float baseLine = pointUp ? bottom : top;
+            PointF[] points = new PointF[]
+            {
+                new PointF(coord, point),
+                new PointF(coord - 4, baseLine),
+                new PointF(coord + 4, baseLine)
+            };
+
+            canvas.SmoothingMode = SmoothingMode.AntiAlias;
+            canvas.FillPolygon(inside, points);
+            canvas.DrawPolygon(border, points);
+        }
         private void DrawRangeMark(Graphics canvas, Pen border, Brush inside, int start, int range)
         {
             float left = start;
@@ -463,6 +528,14 @@ namespace Kinovea.ScreenManager
         private void UpdateCursorPosition()
         {
             pixelPosition = GetCoordFromTimestamp(position) - halfCursorWidth;
+        }
+        private void SetHairline(int index, long value)
+        {
+            int requiredCount = Math.Max(index + 1, 2);
+            while (hairlines.Count < requiredCount)
+                hairlines.Add(0);
+
+            hairlines[index] = value;
         }
         private void UpdateMarkersPositions()
         {

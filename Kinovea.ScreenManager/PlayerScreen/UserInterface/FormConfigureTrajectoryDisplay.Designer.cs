@@ -1,4 +1,4 @@
-namespace Kinovea.ScreenManager
+ï»¿namespace Kinovea.ScreenManager
 {
     partial class formConfigureTrajectoryDisplay
     {
@@ -250,7 +250,7 @@ namespace Kinovea.ScreenManager
             this.label5.Name = "label5";
             this.label5.Size = new System.Drawing.Size(13, 13);
             this.label5.TabIndex = 51;
-            this.label5.Text = "×";
+            this.label5.Text = "x";
             // 
             // tbSearchWidth
             // 
@@ -284,7 +284,7 @@ namespace Kinovea.ScreenManager
             this.label4.Name = "label4";
             this.label4.Size = new System.Drawing.Size(13, 13);
             this.label4.TabIndex = 45;
-            this.label4.Text = "×";
+            this.label4.Text = "x";
             // 
             // tbBlockWidth
             // 

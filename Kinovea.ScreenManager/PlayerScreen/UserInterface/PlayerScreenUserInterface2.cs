@@ -1,6 +1,6 @@
 #region License
 /*
-Copyright © Joan Charmant 2008-2009.
+Copyright ï¿½ Joan Charmant 2008-2009.
 jcharmant@gmail.com
  
 This file is part of Kinovea.
@@ -895,6 +895,9 @@ namespace Kinovea.ScreenManager
         }
         public void SetSyncMergeImage(Bitmap _SyncMergeImage, bool _bUpdateUI)
         {
+            if (m_SyncMergeImage != null && !object.ReferenceEquals(m_SyncMergeImage, _SyncMergeImage))
+                m_SyncMergeImage.Dispose();
+
             m_SyncMergeImage = _SyncMergeImage;
 
             if (_bUpdateUI)
@@ -1080,7 +1083,7 @@ namespace Kinovea.ScreenManager
             if (!m_FrameServer.Loaded)
                 return;
 
-            string size = string.Format("{0}×{1} px", m_FrameServer.Metadata.ImageSize.Width, m_FrameServer.Metadata.ImageSize.Height);
+            string size = string.Format("{0}x{1} px", m_FrameServer.Metadata.ImageSize.Width, m_FrameServer.Metadata.ImageSize.Height);
             string fps = string.Format("{0:0.00} fps", 1000 / timeMapper.UserInterval);
 
             infobar.Visible = true;
@@ -1593,7 +1596,7 @@ namespace Kinovea.ScreenManager
 
                 //---------------------------------------------------------------------------
                 // Si on est en dehors de la zone primaire, ou qu'on va en sortir,
-                // se replacer au début de celle-ci.
+                // se replacer au dï¿½but de celle-ci.
                 //---------------------------------------------------------------------------
                 if ((m_iCurrentPosition <= m_iSelStart) || (m_iCurrentPosition > m_iSelEnd))
                 {

@@ -44,15 +44,18 @@ namespace Kinovea.ScreenManager
                 manager.AddPlayerScreen();
                 LoadInSpecificTarget(manager, 0, path, screenDescription);
             }
-            else if (manager.ScreenCount == 1)
-            {
-                LoadInSpecificTarget(manager, 0, path, screenDescription);
-            }
-            else if (manager.ScreenCount == 2)
+            else
             {
                 int target = manager.FindTargetScreen(typeof(PlayerScreen));
                 if (target != -1)
+                {
                     LoadInSpecificTarget(manager, target, path, screenDescription);
+                }
+                else if (manager.CanAddScreen())
+                {
+                    manager.AddPlayerScreen();
+                    LoadInSpecificTarget(manager, manager.ScreenCount - 1, path, screenDescription);
+                }
             }
         }
 
@@ -63,11 +66,10 @@ namespace Kinovea.ScreenManager
             if (screen is CaptureScreen)
             {
                 // Loading a video onto a capture screen should not close the capture screen.
-                // If there is room to add a second screen, we add a playback screen and load the video there, otherwise, we don't do anything.
-                if (manager.ScreenCount == 1)
+                if (manager.CanAddScreen())
                 {
                     manager.AddPlayerScreen();
-                    LoadInSpecificTarget(manager, 1, path, screenDescription);
+                    LoadInSpecificTarget(manager, manager.ScreenCount - 1, path, screenDescription);
                 }
             }
             else if (screen is PlayerScreen)

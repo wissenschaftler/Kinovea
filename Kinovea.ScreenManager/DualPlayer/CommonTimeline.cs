@@ -29,45 +29,53 @@ namespace Kinovea.ScreenManager
         /// </summary>
         public void Initialize(PlayerScreen leftPlayer, PlayerScreen rightPlayer)
         {
-            PlayerSyncInfo leftInfo = new PlayerSyncInfo();
-            leftInfo.SyncTime = leftPlayer.LocalTimeOriginPhysical;
-            leftInfo.LastTime = leftPlayer.LocalLastTime;
-            
-            PlayerSyncInfo rightInfo = new PlayerSyncInfo();
-            rightInfo.SyncTime = rightPlayer.LocalTimeOriginPhysical;
-            rightInfo.LastTime = rightPlayer.LocalLastTime;
-            
-            leftInfo.Scale = 1.0;
-            rightInfo.Scale = 1.0;
-            if (PreferencesManager.PlayerPreferences.SyncByMotion)
+            Initialize(new PlayerScreen[] { leftPlayer, rightPlayer });
+        }
+
+        public void Initialize(IList<PlayerScreen> players)
+        {
+            Initialize(players, players != null && players.Count > 0 ? players[0] : null);
+        }
+
+        public void Initialize(IList<PlayerScreen> players, PlayerScreen referencePlayer)
+        {
+            syncInfos.Clear();
+            commonLastTime = 0;
+            frameTime = 0;
+            if (players == null || players.Count == 0)
+                return;
+
+            PlayerScreen reference = referencePlayer != null && players.Contains(referencePlayer) ? referencePlayer : players[0];
+            long referenceDuration = Math.Max(1, reference.LocalLastTime - reference.LocalTimeOriginPhysical);
+            long latestNormalizedOrigin = long.MinValue;
+
+            foreach (PlayerScreen player in players)
             {
-                long leftDuration = leftInfo.LastTime - leftInfo.SyncTime;
-                long rightDuration = rightInfo.LastTime - rightInfo.SyncTime;
-                rightInfo.Scale = (double)rightDuration / leftDuration;
+                PlayerSyncInfo info = new PlayerSyncInfo();
+                info.SyncTime = player.LocalTimeOriginPhysical;
+                info.LastTime = player.LocalLastTime;
+                info.Scale = 1.0;
+
+                if (PreferencesManager.PlayerPreferences.SyncByMotion)
+                {
+                    long duration = Math.Max(1, info.LastTime - info.SyncTime);
+                    info.Scale = (double)duration / referenceDuration;
+                }
+
+                syncInfos[player.Id] = info;
+                latestNormalizedOrigin = Math.Max(latestNormalizedOrigin, (long)(info.SyncTime / info.Scale));
             }
 
-            // Start of each video in common time. One will start at 0 while the other will have an offset.
-            // This is what aligns the videos on their respective time origin.
-            long offsetLeft = 0;
-            long offsetRight = 0;
-            long rightOrigin = (long)(rightPlayer.LocalTimeOriginPhysical / rightInfo.Scale);
-            if (leftPlayer.LocalTimeOriginPhysical < rightOrigin)
-                offsetLeft = rightOrigin - leftPlayer.LocalTimeOriginPhysical;
-            else
-                offsetRight = leftPlayer.LocalTimeOriginPhysical - rightOrigin;
-            
-            leftInfo.Offset = offsetLeft;
-            rightInfo.Offset = offsetRight;
+            foreach (PlayerScreen player in players)
+            {
+                PlayerSyncInfo info = syncInfos[player.Id];
+                long normalizedOrigin = (long)(info.SyncTime / info.Scale);
+                info.Offset = latestNormalizedOrigin - normalizedOrigin;
 
-            syncInfos.Clear();
-            syncInfos.Add(leftPlayer.Id, leftInfo);
-            syncInfos.Add(rightPlayer.Id, rightInfo);
-
-            frameTime = Math.Min((long)(leftPlayer.LocalFrameTime * leftInfo.Scale), (long)(rightPlayer.LocalFrameTime * rightInfo.Scale));
-
-            long leftEnd = GetCommonTime(leftPlayer, leftInfo.LastTime);
-            long rightEnd = GetCommonTime(rightPlayer, rightInfo.LastTime);
-            commonLastTime = Math.Max(leftEnd, rightEnd);
+                long playerFrameTime = (long)(player.LocalFrameTime * info.Scale);
+                frameTime = frameTime == 0 ? playerFrameTime : Math.Min(frameTime, playerFrameTime);
+                commonLastTime = Math.Max(commonLastTime, GetCommonTime(player, info.LastTime));
+            }
         }
         
         /// <summary>

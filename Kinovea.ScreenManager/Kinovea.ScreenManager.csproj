@@ -488,6 +488,7 @@
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
     <Compile Include="RecoveryManager.cs" />
+    <Compile Include="ScreenLayoutSpec.cs" />
     <Compile Include="ScreenRemover.cs" />
     <Compile Include="Temporizer.cs" />
     <Compile Include="TextHelper.cs" />
@@ -517,6 +518,9 @@
     </Compile>
     <Compile Include="UserInterface\FormCrashRecovery.designer.cs">
       <DependentUpon>FormCrashRecovery.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UserInterface\FormScreenLayout.cs">
+      <SubType>Form</SubType>
     </Compile>
     <Compile Include="ManipulationType.cs" />
     <Compile Include="Measurement\Calibration\CalibrationHelper.cs" />
