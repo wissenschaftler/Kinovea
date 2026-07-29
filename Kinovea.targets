@@ -52,6 +52,10 @@
     <Copy SourceFiles="..\Refs\OpenCV\2.4.10\$(Platform)\opencv_imgproc2410.dll" DestinationFolder="$(TargetDir)\$(Platform)"/>
     <Copy SourceFiles="..\Refs\OpenCV\2.4.10\$(Platform)\OpenCL.dll" DestinationFolder="$(TargetDir)\$(Platform)"/>
 
+    <Copy SourceFiles="..\Refs\AForge\AForge.dll" DestinationFolder="$(TargetDir)"/>
+    <Copy SourceFiles="..\Refs\AForge\AForge.Video.dll" DestinationFolder="$(TargetDir)"/>
+    <Copy SourceFiles="..\Refs\AForge\AForge.Video.DirectShow.dll" DestinationFolder="$(TargetDir)"/>
+
   </Target>
 
   <Target Name="CopySVGObsRefs">

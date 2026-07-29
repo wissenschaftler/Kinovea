@@ -79,6 +79,7 @@ namespace Kinovea.ScreenManager
         private bool canShowCommonControls;
         private int layoutColumns = 1;
         private int layoutRows = 1;
+        private readonly LayoutSlotCacheEntry[] layoutSlotCache = new LayoutSlotCacheEntry[MaxScreens];
         private int dualLaunchSettingsPendingCountdown;
         private List<string> camerasToDiscover = new List<string>();
         private AudioInputLevelMonitor audioInputLevelMonitor = new AudioInputLevelMonitor();
@@ -180,6 +181,7 @@ namespace Kinovea.ScreenManager
 
             view = new ScreenManagerUserInterface();
             view.FileLoadAsked += View_FileLoadAsked;
+            view.ScreenSwapAsked += View_ScreenSwapAsked;
             view.AutoLaunchAsked += View_AutoLaunchAsked;
             AddCommonControlsEventHandlers();
 
@@ -943,12 +945,18 @@ namespace Kinovea.ScreenManager
         
         public void SwapScreens()
         {
-            if (screenList.Count != 2)
+            SwapScreens(0, 1);
+        }
+        public void SwapScreens(int firstIndex, int secondIndex)
+        {
+            if (firstIndex < 0 || secondIndex < 0 ||
+                firstIndex >= screenList.Count || secondIndex >= screenList.Count ||
+                firstIndex == secondIndex)
                 return;
-            
-            AbstractScreen temp = screenList[0];
-            screenList[0] = screenList[1];
-            screenList[1] = temp;
+
+            AbstractScreen temp = screenList[firstIndex];
+            screenList[firstIndex] = screenList[secondIndex];
+            screenList[secondIndex] = temp;
         }
 
         private bool RemoveScreensFromEnd(int count)
@@ -1577,6 +1585,7 @@ namespace Kinovea.ScreenManager
         }
         private void CloseFile(int screenIndex)
         {
+            ShiftLayoutSlotCacheAfterClose(screenIndex);
             ScreenRemover.RemoveScreen(this, screenIndex);
             AfterSharedBufferChange();
             OrganizeScreens();
@@ -1723,6 +1732,7 @@ namespace Kinovea.ScreenManager
                     break;
             }
 
+            ClearLayoutSlotCache();
             OrganizeScreens();
             OrganizeCommonControls();
             OrganizeMenus();
@@ -2045,6 +2055,29 @@ namespace Kinovea.ScreenManager
         {
             DoLoadMovieInScreen(e.Source, e.Target);
         }
+        private void View_ScreenSwapAsked(object source, EventArgs<Pair<int, int>> e)
+        {
+            if (e == null || e.Value == null)
+                return;
+
+            // Restrict this interaction to 3-4 screens and only when merge is off.
+            if (screenList.Count < 3 || screenList.Count > 4 || dualPlayer.View.Merging)
+                return;
+
+            int sourceIndex = e.Value.First;
+            int targetIndex = e.Value.Second;
+            if (sourceIndex < 0 || targetIndex < 0 ||
+                sourceIndex >= screenList.Count || targetIndex >= screenList.Count ||
+                sourceIndex == targetIndex)
+                return;
+
+            SwapScreens(sourceIndex, targetIndex);
+            OrganizeScreens();
+            OrganizeCommonControls();
+            OrganizeMenus();
+            UpdateStatusBar();
+            ResetSync();
+        }
 
         private void CameraTypeManager_CameraLoadAsked(object source, CameraLoadAskedEventArgs e)
         {
@@ -2201,11 +2234,14 @@ namespace Kinovea.ScreenManager
             if (spec == null)
                 return false;
 
+            // Shrink from the end: cache videos before closing so they can be restored later.
             for (int i = screenList.Count - 1; i >= spec.ScreenCount; i--)
             {
-                if (!ScreenRemover.RemoveScreen(this, i))
-                    return false;
+                CacheLayoutSlot(i);
+                RemoveScreenSilently(i);
             }
+
+            List<int> slotsToRestore = new List<int>();
 
             for (int i = 0; i < spec.ScreenCount; i++)
             {
@@ -2214,13 +2250,19 @@ namespace Kinovea.ScreenManager
                 if (current != null && current.GetType() == expectedType)
                     continue;
 
-                if (current != null && !ScreenRemover.RemoveScreen(this, i))
-                    return false;
+                if (current != null)
+                {
+                    CacheLayoutSlot(i);
+                    RemoveScreenSilently(i);
+                }
 
                 AbstractScreen replacement = spec.ScreenTypes[i] == ScreenType.Capture ?
                     (AbstractScreen)new CaptureScreen() : new PlayerScreen();
                 replacement.RefreshUICulture();
                 AddScreenAt(replacement, i);
+
+                if (CanRestoreLayoutSlot(i, expectedType))
+                    slotsToRestore.Add(i);
             }
 
             layoutColumns = spec.Columns;
@@ -2231,10 +2273,164 @@ namespace Kinovea.ScreenManager
             OrganizeCommonControls();
             OrganizeMenus();
 
+            if (slotsToRestore.Count > 0)
+            {
+                dualLaunchSettingsPendingCountdown = slotsToRestore.Count;
+                foreach (int slot in slotsToRestore)
+                    RestoreLayoutSlot(slot);
+            }
+
             if (canShowCommonControls)
                 ResetSync();
 
             return true;
+        }
+
+        private void CacheLayoutSlot(int index)
+        {
+            if (index < 0 || index >= MaxScreens)
+                return;
+
+            ClearLayoutSlotEntry(index);
+
+            AbstractScreen screen = GetScreenAt(index);
+            if (screen == null || !screen.Full)
+                return;
+
+            IScreenDescription description = screen.GetScreenDescription();
+            ScreenDescriptionPlayback playback = description as ScreenDescriptionPlayback;
+            if (playback != null)
+            {
+                playback.Autoplay = false;
+                if (string.IsNullOrEmpty(playback.FullPath) && !playback.IsReplayWatcher)
+                    return;
+            }
+
+            string annotationsPath = null;
+            PlayerScreen player = screen as PlayerScreen;
+            if (player != null && player.FrameServer != null && player.FrameServer.Metadata != null)
+            {
+                try
+                {
+                    string cacheDirectory = Path.Combine(Software.TempDirectory, "layout-slots");
+                    if (!Directory.Exists(cacheDirectory))
+                        Directory.CreateDirectory(cacheDirectory);
+
+                    annotationsPath = Path.Combine(cacheDirectory, Guid.NewGuid().ToString() + ".kva");
+                    MetadataSerializer serializer = new MetadataSerializer();
+                    serializer.SaveToFile(player.FrameServer.Metadata, annotationsPath);
+                }
+                catch (Exception e)
+                {
+                    log.ErrorFormat("Failed to cache annotations for layout slot {0}.", index);
+                    log.Error(e.ToString());
+                    annotationsPath = null;
+                }
+            }
+
+            layoutSlotCache[index] = new LayoutSlotCacheEntry(description, annotationsPath);
+        }
+
+        private bool CanRestoreLayoutSlot(int index, Type expectedType)
+        {
+            if (index < 0 || index >= MaxScreens || layoutSlotCache[index] == null)
+                return false;
+
+            if (expectedType == typeof(PlayerScreen))
+            {
+                ScreenDescriptionPlayback playback = layoutSlotCache[index].Description as ScreenDescriptionPlayback;
+                return playback != null && (!string.IsNullOrEmpty(playback.FullPath) || playback.IsReplayWatcher);
+            }
+
+            return false;
+        }
+
+        private void RestoreLayoutSlot(int index)
+        {
+            AbstractScreen screen = GetScreenAt(index);
+            if (screen == null || screen.Full)
+                return;
+
+            LayoutSlotCacheEntry entry = layoutSlotCache[index];
+            if (entry == null)
+                return;
+
+            ScreenDescriptionPlayback playback = entry.Description as ScreenDescriptionPlayback;
+            if (playback == null || !(screen is PlayerScreen))
+                return;
+
+            LoaderVideo.LoadVideoInScreen(this, playback.FullPath, index, playback);
+
+            PlayerScreen player = GetScreenAt(index) as PlayerScreen;
+            if (player != null && player.Full &&
+                !string.IsNullOrEmpty(entry.AnnotationsPath) && File.Exists(entry.AnnotationsPath))
+            {
+                player.LoadKVA(entry.AnnotationsPath);
+            }
+        }
+
+        private void RemoveScreenSilently(int index)
+        {
+            AbstractScreen screen = GetScreenAt(index);
+            if (screen == null)
+                return;
+
+            // Layout switches cache the content for later restore, so skip the dirty confirmation dialog.
+            RemoveScreen(screen);
+        }
+
+        private void ShiftLayoutSlotCacheAfterClose(int removedIndex)
+        {
+            if (removedIndex < 0 || removedIndex >= MaxScreens)
+                return;
+
+            ClearLayoutSlotEntry(removedIndex);
+
+            for (int i = removedIndex; i < MaxScreens - 1; i++)
+                layoutSlotCache[i] = layoutSlotCache[i + 1];
+
+            layoutSlotCache[MaxScreens - 1] = null;
+        }
+
+        private void ClearLayoutSlotCache()
+        {
+            for (int i = 0; i < layoutSlotCache.Length; i++)
+                ClearLayoutSlotEntry(i);
+        }
+
+        private void ClearLayoutSlotEntry(int index)
+        {
+            if (index < 0 || index >= MaxScreens)
+                return;
+
+            LayoutSlotCacheEntry entry = layoutSlotCache[index];
+            if (entry != null && !string.IsNullOrEmpty(entry.AnnotationsPath))
+            {
+                try
+                {
+                    if (File.Exists(entry.AnnotationsPath))
+                        File.Delete(entry.AnnotationsPath);
+                }
+                catch (Exception e)
+                {
+                    log.ErrorFormat("Failed to delete cached annotations for layout slot {0}.", index);
+                    log.Error(e.ToString());
+                }
+            }
+
+            layoutSlotCache[index] = null;
+        }
+
+        private sealed class LayoutSlotCacheEntry
+        {
+            public IScreenDescription Description { get; private set; }
+            public string AnnotationsPath { get; private set; }
+
+            public LayoutSlotCacheEntry(IScreenDescription description, string annotationsPath)
+            {
+                Description = description;
+                AnnotationsPath = annotationsPath;
+            }
         }
 
         private void SyncLayoutGridToScreenCount()

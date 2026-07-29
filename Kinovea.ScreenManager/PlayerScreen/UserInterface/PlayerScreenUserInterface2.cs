@@ -263,6 +263,7 @@ namespace Kinovea.ScreenManager
         {
             set { m_DualSaveInProgress = value; }
         }
+        public int ScreenIndex { get; set; }
         #endregion
 
         #region Members
@@ -321,6 +322,8 @@ namespace Kinovea.ScreenManager
         private bool m_bKeyframePanelCollapsedManual = false;
         private bool m_bTextEdit;
         private PointF m_DescaledMouse;    // The current mouse point expressed in the original image size coordinates.
+        private Point m_SwapDragStartPoint;
+        private bool m_SwapDragInProgress;
 
         // Others
         private NativeMethods.TimerCallback m_TimerCallback;
@@ -2784,6 +2787,8 @@ namespace Kinovea.ScreenManager
         private void SurfaceScreen_MouseDown(object sender, MouseEventArgs e)
         {
             RaiseSetAsActiveScreenEvent();
+            m_SwapDragStartPoint = e.Location;
+            m_SwapDragInProgress = false;
             
             if (!m_FrameServer.Loaded)
                 return;
@@ -3205,6 +3210,8 @@ namespace Kinovea.ScreenManager
                 return;
 
             m_DescaledMouse = m_FrameServer.ImageTransform.Untransform(e.Location);
+            if (TryStartScreenSwapDrag(e))
+                return;
 
             if (e.Button == MouseButtons.None && m_FrameServer.Metadata.Magnifier.Mode == MagnifierMode.Direct)
             {
@@ -3270,7 +3277,7 @@ namespace Kinovea.ScreenManager
                                     fDeltaX = -fDeltaX;
                                 }
 
-                                m_FrameServer.ImageTransform.MoveZoomWindow(fDeltaX, fDeltaY);
+                                ReportForSyncMergeIfViewportChanged(fDeltaX, fDeltaY);
                             }
                         }
                     }
@@ -3296,7 +3303,7 @@ namespace Kinovea.ScreenManager
                         if (m_FrameServer.Metadata.Mirrored)
                             fDeltaX = -fDeltaX;
 
-                        m_FrameServer.ImageTransform.MoveZoomWindow(fDeltaX, fDeltaY);
+                        ReportForSyncMergeIfViewportChanged(fDeltaX, fDeltaY);
                     }
 
                     DoInvalidate();
@@ -3316,11 +3323,13 @@ namespace Kinovea.ScreenManager
                 // Special case where we move around even with an active tool.
                 // On mouse up we need to restore the cursor of the active tool.
                 UpdateCursor();
+                m_SwapDragInProgress = false;
                 return;
             }
 
             if (e.Button != MouseButtons.Left)
                 return;
+            m_SwapDragInProgress = false;
 
             m_DescaledMouse = m_FrameServer.ImageTransform.Untransform(e.Location);
 
@@ -3355,6 +3364,42 @@ namespace Kinovea.ScreenManager
                 m_DeselectionTimer.Start();
 
             DoInvalidate();
+        }
+        private bool TryStartScreenSwapDrag(MouseEventArgs e)
+        {
+            if (m_SwapDragInProgress)
+                return true;
+
+            if ((e.Button != MouseButtons.Left && e.Button != MouseButtons.Middle) ||
+                ScreenIndex < 0 ||
+                m_bSyncMerge ||
+                (ModifierKeys & Keys.Shift) != Keys.Shift ||
+                m_ActiveTool != m_PointerTool ||
+                m_FrameServer.Metadata.DrawingInitializing ||
+                InteractiveFiltering)
+                return false;
+
+            Size dragSize = SystemInformation.DragSize;
+            Rectangle dragRectangle = new Rectangle(
+                m_SwapDragStartPoint.X - dragSize.Width / 2,
+                m_SwapDragStartPoint.Y - dragSize.Height / 2,
+                dragSize.Width,
+                dragSize.Height);
+
+            if (dragRectangle.Contains(e.Location))
+                return false;
+
+            m_SwapDragInProgress = true;
+            try
+            {
+                DoDragDrop(ScreenIndex, DragDropEffects.Move);
+            }
+            finally
+            {
+                m_SwapDragInProgress = false;
+            }
+
+            return true;
         }
         private void SurfaceScreen_MouseDoubleClick(object sender, MouseEventArgs e)
         {
@@ -4754,6 +4799,13 @@ namespace Kinovea.ScreenManager
             m_SyncAlpha = Math.Min(m_SyncAlpha + 0.1f, 1.0f);
             AfterSyncAlphaChange();
             DoInvalidate();
+        }
+        private void ReportForSyncMergeIfViewportChanged(double deltaX, double deltaY)
+        {
+            Rectangle before = m_FrameServer.ImageTransform.ZoomWindow;
+            m_FrameServer.ImageTransform.MoveZoomWindow(deltaX, deltaY);
+            if (m_FrameServer.ImageTransform.ZoomWindow != before)
+                ReportForSyncMerge();
         }
         private void ReportForSyncMerge()
         {

@@ -37,6 +37,7 @@ namespace Kinovea.ScreenManager
     {
         #region Events
         public event EventHandler<FileLoadAskedEventArgs> FileLoadAsked;
+        public event EventHandler<EventArgs<Pair<int, int>>> ScreenSwapAsked;
         public event EventHandler AutoLaunchAsked;
         #endregion
         
@@ -282,7 +283,13 @@ namespace Kinovea.ScreenManager
         }
         private void Drop(DragEventArgs e, int target)
         {
-            if(e.Data.GetDataPresent(typeof(CameraSummary)))
+            if (e.Data.GetDataPresent(typeof(int)))
+            {
+                int source = (int)e.Data.GetData(typeof(int));
+                if (target >= 0 && source >= 0 && source != target && ScreenSwapAsked != null)
+                    ScreenSwapAsked(this, new EventArgs<Pair<int, int>>(new Pair<int, int>(source, target)));
+            }
+            else if(e.Data.GetDataPresent(typeof(CameraSummary)))
             {
                 CameraSummary summary = (CameraSummary)e.Data.GetData(typeof(CameraSummary));
                 if(summary != null)

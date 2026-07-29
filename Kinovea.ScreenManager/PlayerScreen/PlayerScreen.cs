@@ -590,6 +590,7 @@ namespace Kinovea.ScreenManager
         public override void Identify(int index)
         {
             this.index = index;
+            view.ScreenIndex = index;
         }
         
 
