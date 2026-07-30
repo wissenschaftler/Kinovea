@@ -78,6 +78,7 @@ namespace Kinovea.ScreenManager
 
         public static void GetDefaultGrid(int count, out int columns, out int rows)
         {
+            // Preset 4-screen layout defaults to 2×2; all other counts (including 5+) use one equal-width row.
             if (count == 4)
             {
                 columns = 2;

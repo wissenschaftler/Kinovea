@@ -79,7 +79,7 @@ namespace Kinovea.ScreenManager
         private bool canShowCommonControls;
         private int layoutColumns = 1;
         private int layoutRows = 1;
-        private readonly LayoutSlotCacheEntry[] layoutSlotCache = new LayoutSlotCacheEntry[MaxScreens];
+        private readonly List<LayoutSlotCacheEntry> layoutSlotCache = new List<LayoutSlotCacheEntry>();
         private int dualLaunchSettingsPendingCountdown;
         private List<string> camerasToDiscover = new List<string>();
         private AudioInputLevelMonitor audioInputLevelMonitor = new AudioInputLevelMonitor();
@@ -115,6 +115,7 @@ namespace Kinovea.ScreenManager
         private ToolStripMenuItem mnuThreePlayers = new ToolStripMenuItem();
         private ToolStripMenuItem mnuFourPlayers = new ToolStripMenuItem();
         private ToolStripMenuItem mnuFourPlayersRow = new ToolStripMenuItem();
+        private ToolStripMenuItem mnuInsertScreenRight = new ToolStripMenuItem();
         private ToolStripMenuItem mnuOneCapture = new ToolStripMenuItem();
         private ToolStripMenuItem mnuTwoCaptures = new ToolStripMenuItem();
         private ToolStripMenuItem mnuTwoMixed = new ToolStripMenuItem();
@@ -166,6 +167,7 @@ namespace Kinovea.ScreenManager
         private ToolStripButton toolThreePlayers = new ToolStripButton();
         private ToolStripButton toolFourPlayers = new ToolStripButton();
         private ToolStripButton toolFourPlayersRow = new ToolStripButton();
+        private ToolStripButton toolInsertScreenRight = new ToolStripButton();
         private ToolStripButton toolOneCapture = new ToolStripButton();
         private ToolStripButton toolTwoCaptures = new ToolStripButton();
         private ToolStripButton toolTwoMixed = new ToolStripButton();
@@ -435,6 +437,9 @@ namespace Kinovea.ScreenManager
             mnuFourPlayersRow.Image = Properties.Resources.dualplayback;
             mnuFourPlayersRow.Click += (s, e) => ApplyLayout(ScreenLayoutSpec.Playback(4, 4, 1));
             mnuFourPlayersRow.MergeAction = MergeAction.Append;
+            mnuInsertScreenRight.Image = Properties.Drawings.plus_small;
+            mnuInsertScreenRight.Click += (s, e) => InsertScreenToRightOfActive();
+            mnuInsertScreenRight.MergeAction = MergeAction.Append;
             mnuOneCapture.Image = Properties.Resources.camera_video;
             mnuOneCapture.Click += new EventHandler(mnuOneCaptureOnClick);
             mnuOneCapture.MergeAction = MergeAction.Append;
@@ -464,6 +469,7 @@ namespace Kinovea.ScreenManager
                                                                     mnuThreePlayers,
                                                                     mnuFourPlayers,
                                                                     mnuFourPlayersRow,
+                                                                    mnuInsertScreenRight,
                                                                     new ToolStripSeparator(),
                                                                     mnuOneCapture, 
                                                                     mnuTwoCaptures,
@@ -656,6 +662,10 @@ namespace Kinovea.ScreenManager
             toolFourPlayersRow.DisplayStyle = ToolStripItemDisplayStyle.Image;
             toolFourPlayersRow.Image = Properties.Resources.dualplayback;
             toolFourPlayersRow.Click += (s, e) => ApplyLayout(ScreenLayoutSpec.Playback(4, 4, 1));
+
+            toolInsertScreenRight.DisplayStyle = ToolStripItemDisplayStyle.Image;
+            toolInsertScreenRight.Image = Properties.Drawings.plus_small;
+            toolInsertScreenRight.Click += (s, e) => InsertScreenToRightOfActive();
             
             toolOneCapture.DisplayStyle = ToolStripItemDisplayStyle.Image;
             toolOneCapture.Image = Properties.Resources.camera_video;
@@ -679,6 +689,7 @@ namespace Kinovea.ScreenManager
                                             toolThreePlayers,
                                             toolFourPlayers,
                                             toolFourPlayersRow,
+                                            toolInsertScreenRight,
                                             new ToolStripSeparator(),
                                             toolOneCapture, 
                                             toolTwoCaptures, 
@@ -900,7 +911,7 @@ namespace Kinovea.ScreenManager
 
         public bool CanAddScreen()
         {
-            return screenList.Count < MaxScreens;
+            return true;
         }
 
         private int GetScreenIndex(object sender)
@@ -1312,6 +1323,10 @@ namespace Kinovea.ScreenManager
             mnuSwapScreens.Enabled = screenList.Count == 2;
             mnuToggleCommonCtrls.Enabled = canShowCommonControls;
 
+            bool canInsertScreen = screenList.Count > 0;
+            mnuInsertScreenRight.Enabled = canInsertScreen;
+            toolInsertScreenRight.Enabled = canInsertScreen;
+
             bool allScreensAreEmpty = screenList.Count == 0 || screenList.All(screen => !screen.Full);
             int closeMenuIndex = 0;
             for (int i = 0; i < screenList.Count && closeMenuIndex < closeFileMenus.Length; i++)
@@ -1469,6 +1484,7 @@ namespace Kinovea.ScreenManager
             toolThreePlayers.ToolTipText = ScreenManagerLang.mnuThreePlayers;
             toolFourPlayers.ToolTipText = ScreenManagerLang.mnuFourPlayers;
             toolFourPlayersRow.ToolTipText = ScreenManagerLang.mnuFourPlayersRow;
+            toolInsertScreenRight.ToolTipText = ScreenManagerLang.mnuInsertScreenRight;
             toolOneCapture.ToolTipText = ScreenManagerLang.mnuOneCapture;
             toolTwoCaptures.ToolTipText = ScreenManagerLang.mnuTwoCaptures;
             toolTwoMixed.ToolTipText = ScreenManagerLang.mnuTwoMixed;	
@@ -1504,6 +1520,7 @@ namespace Kinovea.ScreenManager
             mnuThreePlayers.Text = ScreenManagerLang.mnuThreePlayers;
             mnuFourPlayers.Text = ScreenManagerLang.mnuFourPlayers;
             mnuFourPlayersRow.Text = ScreenManagerLang.mnuFourPlayersRow;
+            mnuInsertScreenRight.Text = ScreenManagerLang.mnuInsertScreenRight;
             mnuOneCapture.Text = ScreenManagerLang.mnuOneCapture;
             mnuTwoCaptures.Text = ScreenManagerLang.mnuTwoCaptures;
             mnuTwoMixed.Text = ScreenManagerLang.mnuTwoMixed;
@@ -2060,8 +2077,8 @@ namespace Kinovea.ScreenManager
             if (e == null || e.Value == null)
                 return;
 
-            // Restrict this interaction to 3-4 screens and only when merge is off.
-            if (screenList.Count < 3 || screenList.Count > 4 || dualPlayer.View.Merging)
+            // Restrict this interaction to 3+ screens and only when merge is off.
+            if (screenList.Count < 3 || dualPlayer.View.Merging)
                 return;
 
             int sourceIndex = e.Value.First;
@@ -2286,9 +2303,59 @@ namespace Kinovea.ScreenManager
             return true;
         }
 
+        /// <summary>
+        /// Insert an empty screen immediately to the right of the active screen.
+        /// Existing screen content is preserved. Layout becomes a single row with equal column widths.
+        /// </summary>
+        public bool InsertScreenToRightOfActive()
+        {
+            if (screenList.Count == 0)
+                return false;
+
+            int activeIndex = activeScreen != null ? screenList.IndexOf(activeScreen) : -1;
+            if (activeIndex < 0)
+                activeIndex = 0;
+
+            int insertIndex = activeIndex + 1;
+            AbstractScreen active = screenList[activeIndex];
+            AbstractScreen previousActive = activeScreen;
+
+            AbstractScreen inserted = active is CaptureScreen ?
+                (AbstractScreen)new CaptureScreen() : new PlayerScreen();
+            inserted.RefreshUICulture();
+
+            ShiftLayoutSlotCacheAfterInsert(insertIndex);
+            AddScreenAt(inserted, insertIndex);
+
+            // Keep a single row so "to the right" is visual and all column widths stay equal.
+            layoutColumns = screenList.Count;
+            layoutRows = 1;
+
+            AfterSharedBufferChange();
+            OrganizeScreens();
+            OrganizeCommonControls();
+            OrganizeMenus();
+
+            if (previousActive != null && screenList.Contains(previousActive))
+                SetActiveScreen(previousActive);
+            else if (screenList.Count > 0)
+                SetActiveScreen(screenList[Math.Min(activeIndex, screenList.Count - 1)]);
+
+            if (canShowCommonControls)
+                ResetSync();
+
+            return true;
+        }
+
+        private void EnsureLayoutSlotCacheSize(int size)
+        {
+            while (layoutSlotCache.Count < size)
+                layoutSlotCache.Add(null);
+        }
+
         private void CacheLayoutSlot(int index)
         {
-            if (index < 0 || index >= MaxScreens)
+            if (index < 0)
                 return;
 
             ClearLayoutSlotEntry(index);
@@ -2328,12 +2395,13 @@ namespace Kinovea.ScreenManager
                 }
             }
 
+            EnsureLayoutSlotCacheSize(index + 1);
             layoutSlotCache[index] = new LayoutSlotCacheEntry(description, annotationsPath);
         }
 
         private bool CanRestoreLayoutSlot(int index, Type expectedType)
         {
-            if (index < 0 || index >= MaxScreens || layoutSlotCache[index] == null)
+            if (index < 0 || index >= layoutSlotCache.Count || layoutSlotCache[index] == null)
                 return false;
 
             if (expectedType == typeof(PlayerScreen))
@@ -2381,27 +2449,35 @@ namespace Kinovea.ScreenManager
 
         private void ShiftLayoutSlotCacheAfterClose(int removedIndex)
         {
-            if (removedIndex < 0 || removedIndex >= MaxScreens)
+            if (removedIndex < 0 || removedIndex >= layoutSlotCache.Count)
                 return;
 
             ClearLayoutSlotEntry(removedIndex);
+            layoutSlotCache.RemoveAt(removedIndex);
+        }
 
-            for (int i = removedIndex; i < MaxScreens - 1; i++)
-                layoutSlotCache[i] = layoutSlotCache[i + 1];
+        private void ShiftLayoutSlotCacheAfterInsert(int insertIndex)
+        {
+            if (insertIndex < 0)
+                return;
 
-            layoutSlotCache[MaxScreens - 1] = null;
+            EnsureLayoutSlotCacheSize(insertIndex);
+            layoutSlotCache.Insert(insertIndex, null);
         }
 
         private void ClearLayoutSlotCache()
         {
-            for (int i = 0; i < layoutSlotCache.Length; i++)
+            for (int i = 0; i < layoutSlotCache.Count; i++)
                 ClearLayoutSlotEntry(i);
+            layoutSlotCache.Clear();
         }
 
         private void ClearLayoutSlotEntry(int index)
         {
-            if (index < 0 || index >= MaxScreens)
+            if (index < 0)
                 return;
+
+            EnsureLayoutSlotCacheSize(index + 1);
 
             LayoutSlotCacheEntry entry = layoutSlotCache[index];
             if (entry != null && !string.IsNullOrEmpty(entry.AnnotationsPath))

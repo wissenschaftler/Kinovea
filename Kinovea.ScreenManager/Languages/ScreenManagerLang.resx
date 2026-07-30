@@ -347,6 +347,7 @@
    <data name="mnuThreePlayers" xml:space="preserve"><value>Three playback screens</value></data>
    <data name="mnuFourPlayers" xml:space="preserve"><value>Four playback screens (2×2)</value></data>
    <data name="mnuFourPlayersRow" xml:space="preserve"><value>Four playback screens (1×4)</value></data>
+   <data name="mnuInsertScreenRight" xml:space="preserve"><value>Insert screen to the right of active</value></data>
    <data name="mnuConfigureScreens" xml:space="preserve"><value>Configure screen layout…</value></data>
    <data name="ScreenLayout_Title" xml:space="preserve"><value>Configure screen layout</value></data>
    <data name="ScreenLayout_Count" xml:space="preserve"><value>Number of screens:</value></data>

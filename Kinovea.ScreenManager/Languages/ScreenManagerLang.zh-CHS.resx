@@ -268,6 +268,8 @@
   </data>
   <data name="mnuFourPlayersRow" xml:space="preserve"><value>四屏幕播放模式 (1×4)</value>
   </data>
+  <data name="mnuInsertScreenRight" xml:space="preserve"><value>在活动屏右侧插入屏幕</value>
+  </data>
   <data name="mnuConfigureScreens" xml:space="preserve"><value>配置屏幕布局…</value>
   </data>
   <data name="ScreenLayout_Title" xml:space="preserve"><value>配置屏幕布局</value>

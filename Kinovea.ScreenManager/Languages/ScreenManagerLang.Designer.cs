@@ -3132,6 +3132,10 @@ namespace Kinovea.ScreenManager.Languages {
             get { return ResourceManager.GetString("mnuFourPlayersRow", resourceCulture); }
         }
 
+        public static string mnuInsertScreenRight {
+            get { return ResourceManager.GetString("mnuInsertScreenRight", resourceCulture); }
+        }
+
         public static string mnuConfigureScreens {
             get { return ResourceManager.GetString("mnuConfigureScreens", resourceCulture); }
         }
