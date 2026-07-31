@@ -43,6 +43,10 @@ namespace Kinovea.ScreenManager
         private List<PlayerScreen> playablePlayers = new List<PlayerScreen>();
         private Dictionary<PlayerScreen, Bitmap> lastSyncMergeImages = new Dictionary<PlayerScreen, Bitmap>();
         private List<PlayerScreen> syncMergeImageOrder = new List<PlayerScreen>();
+        private Dictionary<PlayerScreen, float> sourceOverlayAlphas = new Dictionary<PlayerScreen, float>();
+        private PlayerScreen soloOverlaySource;
+        private Dictionary<PlayerScreen, float> savedOverlayAlphasBeforeSolo;
+        private float savedTargetSyncAlphaBeforeSolo = 1.0f;
         private int resyncOperations = 0;
         private int maxResyncOperations = 1;
         private HotkeyCommand[] hotkeys;
@@ -336,8 +340,10 @@ namespace Kinovea.ScreenManager
             if (lastSyncMergeImages.TryGetValue(player, out previous) && previous != null && !object.ReferenceEquals(previous, e.Value))
                 previous.Dispose();
             lastSyncMergeImages[player] = e.Value;
-            syncMergeImageOrder.Remove(player);
-            syncMergeImageOrder.Add(player);
+            // Keep intentional z-order: only append new sources, do not promote on every frame.
+            if (!syncMergeImageOrder.Contains(player))
+                syncMergeImageOrder.Add(player);
+            EnsureSourceOverlayAlpha(player);
 
             UpdateSyncMergeOverlay(!dualSaveInProgress);
         }
@@ -348,12 +354,24 @@ namespace Kinovea.ScreenManager
             if (target == null)
                 return;
 
-            List<Bitmap> otherImages = mergeCandidates
-                .Where(candidate => candidate != target && lastSyncMergeImages.ContainsKey(candidate))
-                .Select(candidate => lastSyncMergeImages[candidate])
-                .Where(image => image != null)
-                .ToList();
-            Bitmap overlay = view.Merging ? ImageHelper.GetOverlayComposite(otherImages) : null;
+            List<PlayerScreen> orderedSources = GetOrderedOverlaySources(mergeCandidates, target);
+            List<Bitmap> otherImages = new List<Bitmap>();
+            List<float> alphas = new List<float>();
+            foreach (PlayerScreen source in orderedSources)
+            {
+                if (soloOverlaySource != null && source != soloOverlaySource)
+                    continue;
+
+                Bitmap image;
+                if (!lastSyncMergeImages.TryGetValue(source, out image) || image == null)
+                    continue;
+
+                otherImages.Add(image);
+                // Solo mode always draws the focused source fully opaque.
+                alphas.Add(soloOverlaySource != null ? 1.0f : EnsureSourceOverlayAlpha(source));
+            }
+
+            Bitmap overlay = view.Merging ? ImageHelper.GetOverlayComposite(otherImages, alphas) : null;
             target.SetSyncMergeImage(overlay, updateUI);
 
             foreach (PlayerScreen other in players)
@@ -361,6 +379,77 @@ namespace Kinovea.ScreenManager
                 if (other != target)
                     other.SetSyncMergeImage(null, updateUI);
             }
+        }
+
+        private List<PlayerScreen> GetOrderedOverlaySources(IList<PlayerScreen> mergeCandidates, PlayerScreen target)
+        {
+            List<PlayerScreen> ordered = new List<PlayerScreen>();
+            foreach (PlayerScreen source in syncMergeImageOrder)
+            {
+                if (source == target)
+                    continue;
+                if (!mergeCandidates.Contains(source))
+                    continue;
+                if (!lastSyncMergeImages.ContainsKey(source) || lastSyncMergeImages[source] == null)
+                    continue;
+                if (!ordered.Contains(source))
+                    ordered.Add(source);
+            }
+
+            foreach (PlayerScreen candidate in mergeCandidates)
+            {
+                if (candidate == target)
+                    continue;
+                if (!lastSyncMergeImages.ContainsKey(candidate) || lastSyncMergeImages[candidate] == null)
+                    continue;
+                if (!ordered.Contains(candidate))
+                    ordered.Add(candidate);
+            }
+
+            return ordered;
+        }
+
+        private float EnsureSourceOverlayAlpha(PlayerScreen source)
+        {
+            float alpha;
+            if (!sourceOverlayAlphas.TryGetValue(source, out alpha))
+            {
+                // Start semi-transparent so the first Alt+wheel interaction does not jump to full cover
+                // after we force the target SyncAlpha to 1.0.
+                alpha = 0.5f;
+                sourceOverlayAlphas[source] = alpha;
+            }
+
+            return alpha;
+        }
+
+        private void BringSourceOverlayToFront(PlayerScreen source)
+        {
+            // Rebuild order explicitly: every other source stays below, this source becomes last (= top).
+            List<PlayerScreen> below = new List<PlayerScreen>();
+            foreach (PlayerScreen player in syncMergeImageOrder)
+            {
+                if (player == null || player == source)
+                    continue;
+                if (!below.Contains(player))
+                    below.Add(player);
+            }
+
+            syncMergeImageOrder.Clear();
+            syncMergeImageOrder.AddRange(below);
+            syncMergeImageOrder.Add(source);
+        }
+
+        private void NudgeSourceOverlayAlpha(PlayerScreen source, int scrollOffset)
+        {
+            float alpha = EnsureSourceOverlayAlpha(source);
+            // Match existing Alt+wheel convention: scroll up => more transparent.
+            if (scrollOffset > 0)
+                alpha = Math.Max(0.0f, alpha - 0.1f);
+            else
+                alpha = Math.Min(1.0f, alpha + 0.1f);
+
+            sourceOverlayAlphas[source] = alpha;
         }
 
         private PlayerScreen GetMergeTarget(IList<PlayerScreen> mergeCandidates)
@@ -493,10 +582,18 @@ namespace Kinovea.ScreenManager
                 mergeTargetPlayer = referencePlayer != null && mergeCandidates.Contains(referencePlayer)
                     ? referencePlayer
                     : mergeCandidates.FirstOrDefault();
+
+                // Per-source alphas control opacity; keep the target's overall SyncAlpha at full strength
+                // so a source at alpha 1.0 can actually cover the target video and lower layers.
+                if (mergeTargetPlayer != null)
+                    mergeTargetPlayer.SetSyncAlpha(1.0f);
             }
             else
             {
                 mergeTargetPlayer = null;
+                ClearSoloOverlayState();
+                sourceOverlayAlphas.Clear();
+                syncMergeImageOrder.Clear();
             }
 
             // This will also do a full refresh, and trigger back Player_ImageChanged().
@@ -615,6 +712,8 @@ namespace Kinovea.ScreenManager
             }
             lastSyncMergeImages.Clear();
             syncMergeImageOrder.Clear();
+            sourceOverlayAlphas.Clear();
+            ClearSoloOverlayState();
 
             if (active)
             {
@@ -640,6 +739,8 @@ namespace Kinovea.ScreenManager
             player.HighSpeedFactorChanged += Player_HighSpeedFactorChanged;
             player.TimeOriginChanged += Player_TimeOriginChanged;
             player.ImageChanged += Player_ImageChanged;
+            player.SyncMergeSourceWheelAsked += Player_SyncMergeSourceWheelAsked;
+            player.SyncMergeSourceSoloAsked += Player_SyncMergeSourceSoloAsked;
         }
         private void RemoveEventHandlers(PlayerScreen player)
         {
@@ -649,6 +750,109 @@ namespace Kinovea.ScreenManager
             player.HighSpeedFactorChanged -= Player_HighSpeedFactorChanged;
             player.TimeOriginChanged -= Player_TimeOriginChanged;
             player.ImageChanged -= Player_ImageChanged;
+            player.SyncMergeSourceWheelAsked -= Player_SyncMergeSourceWheelAsked;
+            player.SyncMergeSourceSoloAsked -= Player_SyncMergeSourceSoloAsked;
+        }
+        private void Player_SyncMergeSourceWheelAsked(object sender, EventArgs<int> e)
+        {
+            if (!view.Merging)
+                return;
+
+            PlayerScreen player = sender as PlayerScreen;
+            if (player == null)
+                return;
+
+            List<PlayerScreen> mergeCandidates = playablePlayers.Count > 0 ? playablePlayers : players.Where(p => p.Full).ToList();
+            PlayerScreen target = GetMergeTarget(mergeCandidates);
+            if (target == null)
+                return;
+
+            if (player == target)
+            {
+                // On the merge target: Alt+wheel still adjusts overall overlay opacity.
+                target.NudgeSyncAlpha(e.Value);
+                return;
+            }
+
+            // Leaving solo so wheel adjustments apply to the normal stacked overlay again.
+            if (soloOverlaySource != null)
+                RestoreSoloOverlay(target);
+
+            // On a source screen: bring that contribution to the top, then adjust its opacity.
+            BringSourceOverlayToFront(player);
+            NudgeSourceOverlayAlpha(player, e.Value);
+            // Source-layer alpha is what the user is editing. The target used to keep a default
+            // SyncAlpha of ~0.5, which made even an "opaque" top source look translucent and
+            // unable to cover the target video / other layers. Force full-strength drawing so
+            // source alpha 1.0 truly covers.
+            target.SetSyncAlpha(1.0f);
+            // Make sure this source has a current frame in the overlay cache before rebuilding.
+            player.ReportSyncMergeImage();
+            UpdateSyncMergeOverlay(true);
+        }
+        private void Player_SyncMergeSourceSoloAsked(object sender, System.ComponentModel.HandledEventArgs e)
+        {
+            if (!view.Merging)
+                return;
+
+            PlayerScreen player = sender as PlayerScreen;
+            if (player == null)
+                return;
+
+            List<PlayerScreen> mergeCandidates = playablePlayers.Count > 0 ? playablePlayers : players.Where(p => p.Full).ToList();
+            PlayerScreen target = GetMergeTarget(mergeCandidates);
+            if (target == null || player == target)
+                return;
+
+            e.Handled = true;
+
+            if (soloOverlaySource == player)
+            {
+                RestoreSoloOverlay(target);
+                UpdateSyncMergeOverlay(true);
+                return;
+            }
+
+            EnterSoloOverlay(player, target);
+            player.ReportSyncMergeImage();
+            UpdateSyncMergeOverlay(true);
+        }
+
+        private void EnterSoloOverlay(PlayerScreen source, PlayerScreen target)
+        {
+            if (soloOverlaySource == null)
+            {
+                savedOverlayAlphasBeforeSolo = new Dictionary<PlayerScreen, float>(sourceOverlayAlphas);
+                savedTargetSyncAlphaBeforeSolo = target.SyncAlpha;
+            }
+
+            soloOverlaySource = source;
+            target.SetSyncAlpha(1.0f);
+        }
+
+        private void RestoreSoloOverlay(PlayerScreen target)
+        {
+            if (soloOverlaySource == null)
+                return;
+
+            if (savedOverlayAlphasBeforeSolo != null)
+            {
+                sourceOverlayAlphas.Clear();
+                foreach (KeyValuePair<PlayerScreen, float> pair in savedOverlayAlphasBeforeSolo)
+                    sourceOverlayAlphas[pair.Key] = pair.Value;
+            }
+
+            if (target != null)
+                target.SetSyncAlpha(savedTargetSyncAlphaBeforeSolo);
+
+            ClearSoloOverlayState();
+        }
+
+        private void ClearSoloOverlayState()
+        {
+            soloOverlaySource = null;
+            savedOverlayAlphasBeforeSolo = null;
+            savedTargetSyncAlphaBeforeSolo = 1.0f;
         }
         #endregion
 

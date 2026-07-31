@@ -1,6 +1,6 @@
 #region Licence
 /*
-Copyright © Joan Charmant 2008.
+Copyright ù Joan Charmant 2008.
 jcharmant@gmail.com 
  
 This file is part of Kinovea.
@@ -49,6 +49,8 @@ namespace Kinovea.ScreenManager
         public event EventHandler<EventArgs<bool>> SelectionChanged;
         public event EventHandler<EventArgs<Bitmap>> ImageChanged;
         public event EventHandler ResetAsked;
+        public event EventHandler<EventArgs<int>> SyncMergeSourceWheelAsked;
+        public event EventHandler<System.ComponentModel.HandledEventArgs> SyncMergeSourceSoloAsked;
         #endregion
 
         #region Properties
@@ -280,6 +282,18 @@ namespace Kinovea.ScreenManager
                 RefreshImage();
             }
         }
+        public float SyncAlpha
+        {
+            get { return view.SyncAlpha; }
+        }
+        public void SetSyncAlpha(float alpha)
+        {
+            view.SetSyncAlpha(alpha);
+        }
+        public void NudgeSyncAlpha(int scrollOffset)
+        {
+            view.NudgeSyncAlpha(scrollOffset);
+        }
         public bool DualSaveInProgress
         {
             set { view.DualSaveInProgress = value; }
@@ -302,6 +316,45 @@ namespace Kinovea.ScreenManager
         public bool InteractiveFiltering {
             get {return view.InteractiveFiltering;}
         }
+        public int BrightnessAdjustment
+        {
+            get { return brightnessAdjustment; }
+            set
+            {
+                int clamped = Math.Max(-100, Math.Min(100, value));
+                if (brightnessAdjustment == clamped)
+                    return;
+
+                brightnessAdjustment = clamped;
+                view.SetImageAdjustments(brightnessAdjustment, contrastAdjustment, colorTemperatureAdjustment, true);
+            }
+        }
+        public int ContrastAdjustment
+        {
+            get { return contrastAdjustment; }
+            set
+            {
+                int clamped = Math.Max(-100, Math.Min(100, value));
+                if (contrastAdjustment == clamped)
+                    return;
+
+                contrastAdjustment = clamped;
+                view.SetImageAdjustments(brightnessAdjustment, contrastAdjustment, colorTemperatureAdjustment, true);
+            }
+        }
+        public int ColorTemperatureAdjustment
+        {
+            get { return colorTemperatureAdjustment; }
+            set
+            {
+                int clamped = Math.Max(-100, Math.Min(100, value));
+                if (colorTemperatureAdjustment == clamped)
+                    return;
+
+                colorTemperatureAdjustment = clamped;
+                view.SetImageAdjustments(brightnessAdjustment, contrastAdjustment, colorTemperatureAdjustment, true);
+            }
+        }
         public HistoryStack HistoryStack
         {
             get { return historyStack; }
@@ -317,6 +370,9 @@ namespace Kinovea.ScreenManager
         private bool synched;
         private int index;
         private ReplayWatcher replayWatcher;
+        private int brightnessAdjustment;
+        private int contrastAdjustment;
+        private int colorTemperatureAdjustment;
         
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
@@ -329,6 +385,7 @@ namespace Kinovea.ScreenManager
             frameServer = new FrameServerPlayer(historyStack);
             replayWatcher = new ReplayWatcher(this);
             view = new PlayerScreenUserInterface(frameServer, drawingToolbarPresenter);
+            view.SetImageAdjustments(brightnessAdjustment, contrastAdjustment, colorTemperatureAdjustment, false);
             
             BindCommands();
         }
@@ -354,6 +411,8 @@ namespace Kinovea.ScreenManager
             view.SelectionChanged += View_SelectionChanged;
             view.ImageChanged += View_ImageChanged;
             view.ResetAsked += View_ResetAsked;
+            view.SyncMergeSourceWheelAsked += View_SyncMergeSourceWheelAsked;
+            view.SyncMergeSourceSoloAsked += View_SyncMergeSourceSoloAsked;
 
             // Requests for metadata modification coming from the view, these should push a memento on the history stack.
             view.KeyframeAdding += View_KeyframeAdding;
@@ -363,6 +422,7 @@ namespace Kinovea.ScreenManager
             view.MultiDrawingItemAdding += View_MultiDrawingItemAdding;
             view.MultiDrawingItemDeleting += View_MultiDrawingItemDeleting;
             view.DualCommandReceived += (s, e) => OnDualCommandReceived(e);
+            view.ImageAdjustmentsChanged += View_ImageAdjustmentsChanged;
             
             // Just for the magnifier. Remove as soon as possible when the adding of the magnifier is handled in Metadata.
             view.TrackableDrawingAdded += (s, e) => AddTrackableDrawing(e.TrackableDrawing);
@@ -373,6 +433,12 @@ namespace Kinovea.ScreenManager
             
             frameServer.Metadata.AddTrackableDrawingCommand = new RelayCommand<ITrackable>(AddTrackableDrawing);
             frameServer.Metadata.CameraCalibrationAsked += (s, e) => ShowCameraCalibration();
+        }
+        private void View_ImageAdjustmentsChanged(object sender, EventArgs e)
+        {
+            brightnessAdjustment = view.BrightnessAdjustment;
+            contrastAdjustment = view.ContrastAdjustment;
+            colorTemperatureAdjustment = view.ColorTemperatureAdjustment;
         }
 
         #region General events handlers
@@ -465,6 +531,18 @@ namespace Kinovea.ScreenManager
         {
             if (ResetAsked != null)
                 ResetAsked(this, e);
+        }
+
+        private void View_SyncMergeSourceWheelAsked(object sender, EventArgs<int> e)
+        {
+            if (SyncMergeSourceWheelAsked != null)
+                SyncMergeSourceWheelAsked(this, e);
+        }
+
+        private void View_SyncMergeSourceSoloAsked(object sender, System.ComponentModel.HandledEventArgs e)
+        {
+            if (SyncMergeSourceSoloAsked != null)
+                SyncMergeSourceSoloAsked(this, e);
         }
         #endregion
 
@@ -691,6 +769,11 @@ namespace Kinovea.ScreenManager
         public void SetSyncMergeImage(Bitmap _SyncMergeImage, bool _bUpdateUI)
         {
             view.SetSyncMergeImage(_SyncMergeImage, _bUpdateUI);
+        }
+
+        public void ReportSyncMergeImage()
+        {
+            view.ReportSyncMergeImage();
         }
         
         /// <summary>

@@ -77,6 +77,9 @@ namespace Kinovea.ScreenManager
         public event EventHandler<MultiDrawingItemEventArgs> MultiDrawingItemDeleting;
         public event EventHandler<TrackableDrawingEventArgs> TrackableDrawingAdded;
         public event EventHandler<EventArgs<HotkeyCommand>> DualCommandReceived;
+        public event EventHandler ImageAdjustmentsChanged;
+        public event EventHandler<EventArgs<int>> SyncMergeSourceWheelAsked;
+        public event EventHandler<System.ComponentModel.HandledEventArgs> SyncMergeSourceSoloAsked;
         #endregion
 
         #region Commands encapsulating domain logic implemented in the presenter.
@@ -264,6 +267,18 @@ namespace Kinovea.ScreenManager
             set { m_DualSaveInProgress = value; }
         }
         public int ScreenIndex { get; set; }
+        public int BrightnessAdjustment
+        {
+            get { return m_BrightnessAdjustment; }
+        }
+        public int ContrastAdjustment
+        {
+            get { return m_ContrastAdjustment; }
+        }
+        public int ColorTemperatureAdjustment
+        {
+            get { return m_ColorTemperatureAdjustment; }
+        }
         #endregion
 
         #region Members
@@ -301,6 +316,25 @@ namespace Kinovea.ScreenManager
         private static readonly Pen m_PenImageBorder = Pens.SteelBlue;
         private static readonly Size m_MinimalSize = new Size(160, 120);
         private bool m_bEnableCustomDecodingSize = true;
+        private int m_BrightnessAdjustment;
+        private int m_ContrastAdjustment;
+        private int m_ColorTemperatureAdjustment;
+        private readonly ColorMatrix m_ImageAdjustmentMatrix = new ColorMatrix();
+        private readonly ImageAttributes m_ImageAdjustmentsAttr = new ImageAttributes();
+        private bool m_HasImageAdjustments;
+        private bool m_UpdatingImageAdjustmentsUI;
+        private Panel panelImageAdjustments = new Panel();
+        private Label lblImageAdjustments = new Label();
+        private Label lblBrightness = new Label();
+        private Label lblContrast = new Label();
+        private Label lblColorTemperature = new Label();
+        private SliderLinear sldrBrightness = new SliderLinear();
+        private SliderLinear sldrContrast = new SliderLinear();
+        private SliderLinear sldrColorTemperature = new SliderLinear();
+        private Label lblBrightnessValue = new Label();
+        private Label lblContrastValue = new Label();
+        private Label lblColorTemperatureValue = new Label();
+        private Button btnResetImageAdjustments = new Button();
 
         // Selection and current position. All values in absolute timestamps.
         // trkSelection.minimum and maximum are also in absolute timestamps.
@@ -418,6 +452,7 @@ namespace Kinovea.ScreenManager
             InitializeComponent();
             InitializeInfobar();
             InitializeDrawingTools(drawingToolbarPresenter);
+            InitializeImageAdjustmentsControls();
             BuildContextMenus();
             AfterSyncAlphaChange();
             m_MessageToaster = new MessageToaster(pbSurfaceScreen);
@@ -437,6 +472,7 @@ namespace Kinovea.ScreenManager
             m_TimerCallback = MultimediaTimer_Tick;
             m_DeselectionTimer.Interval = 10000;
             m_DeselectionTimer.Tick += DeselectionTimer_OnTick;
+            SetImageAdjustments(0, 0, 0, false);
 
             sldrSpeed.Minimum = 0;
             sldrSpeed.Maximum = 1000;
@@ -855,6 +891,7 @@ namespace Kinovea.ScreenManager
             UpdateTimeLabels();
 
             RepositionSpeedControl();
+            RefreshImageAdjustmentsCulture();
             ReloadTooltipsCulture();
             ReloadToolsCulture();
             ReloadMenusCulture();
@@ -874,6 +911,47 @@ namespace Kinovea.ScreenManager
 
             // Refresh image to update timecode in chronos, grids colors, default fading, etc.
             DoInvalidate();
+        }
+        public void SetImageAdjustments(int brightness, int contrast, int colorTemperature, bool refreshImage)
+        {
+            m_BrightnessAdjustment = Math.Max(-100, Math.Min(100, brightness));
+            m_ContrastAdjustment = Math.Max(-100, Math.Min(100, contrast));
+            m_ColorTemperatureAdjustment = Math.Max(-100, Math.Min(100, colorTemperature));
+            UpdateImageAdjustmentMatrix();
+
+            m_UpdatingImageAdjustmentsUI = true;
+            sldrBrightness.Value = m_BrightnessAdjustment;
+            sldrContrast.Value = m_ContrastAdjustment;
+            sldrColorTemperature.Value = m_ColorTemperatureAdjustment;
+            m_UpdatingImageAdjustmentsUI = false;
+
+            UpdateImageAdjustmentValueLabels();
+
+            if (refreshImage)
+            {
+                DoInvalidate();
+                ReportForSyncMerge();
+            }
+        }
+        public float SyncAlpha
+        {
+            get { return m_SyncAlpha; }
+        }
+        public void SetSyncAlpha(float alpha)
+        {
+            if (!m_bSyncMerge)
+                return;
+
+            m_SyncAlpha = Math.Max(0.0f, Math.Min(1.0f, alpha));
+            AfterSyncAlphaChange();
+            DoInvalidate();
+        }
+        public void NudgeSyncAlpha(int scrollOffset)
+        {
+            if (scrollOffset > 0)
+                IncreaseSyncAlpha();
+            else
+                DecreaseSyncAlpha();
         }
         public void SetInteractiveEffect(InteractiveEffect _effect)
         {
@@ -909,6 +987,10 @@ namespace Kinovea.ScreenManager
                 // because the user may be manually moving the other video.
                 DoInvalidate();
             }
+        }
+        public void ReportSyncMergeImage()
+        {
+            ReportForSyncMerge();
         }
         public void ReferenceImageSizeChanged()
         {
@@ -1767,10 +1849,19 @@ namespace Kinovea.ScreenManager
             }
             else if ((ModifierKeys & Keys.Alt) == Keys.Alt)
             {
-                if (iScrollOffset > 0)
+                if (m_bSyncMerge && SyncMergeSourceWheelAsked != null)
+                {
+                    // Dual controller: source => bring to top + layer alpha; target => overall overlay alpha.
+                    SyncMergeSourceWheelAsked(this, new EventArgs<int>(iScrollOffset));
+                }
+                else if (iScrollOffset > 0)
+                {
                     IncreaseSyncAlpha();
+                }
                 else
+                {
                     DecreaseSyncAlpha();
+                }
             }
             else
             {
@@ -2744,6 +2835,7 @@ namespace Kinovea.ScreenManager
             trkSelection.ToolTip = ScreenManagerLang.ToolTip_trkSelection;
 
             toolTips.SetToolTip(btnTimeOrigin, ScreenManagerLang.mnuMarkTimeAsOrigin);
+            toolTips.SetToolTip(btnResetImageAdjustments, ScreenManagerLang.ImageAdjustments_Reset);
         }
         private void ReloadToolsCulture()
         {
@@ -2780,6 +2872,158 @@ namespace Kinovea.ScreenManager
             m_btnAddKeyFrame.ToolTipText = ScreenManagerLang.ToolTip_AddKeyframe;
             m_btnShowComments.ToolTipText = ScreenManagerLang.ToolTip_ShowComments;
             m_btnToolPresets.ToolTipText = ScreenManagerLang.ToolTip_ColorProfile;
+        }
+        private void InitializeImageAdjustmentsControls()
+        {
+            panelVideoControls.MinimumSize = new Size(panelVideoControls.MinimumSize.Width, 126);
+            panelVideoControls.Size = new Size(panelVideoControls.Width, 152);
+
+            panelImageAdjustments.Dock = DockStyle.Bottom;
+            panelImageAdjustments.Height = 28;
+            panelImageAdjustments.BackColor = Color.White;
+
+            lblImageAdjustments.Location = new Point(6, 6);
+            lblImageAdjustments.Size = new Size(22, 16);
+
+            ConfigureAdjustmentLabel(lblBrightness, 28);
+            ConfigureAdjustmentSlider(sldrBrightness, 42, 95);
+            ConfigureAdjustmentValueLabel(lblBrightnessValue, 138);
+
+            ConfigureAdjustmentLabel(lblContrast, 158);
+            ConfigureAdjustmentSlider(sldrContrast, 172, 95);
+            ConfigureAdjustmentValueLabel(lblContrastValue, 268);
+
+            ConfigureAdjustmentLabel(lblColorTemperature, 288);
+            ConfigureAdjustmentSlider(sldrColorTemperature, 302, 95);
+            ConfigureAdjustmentValueLabel(lblColorTemperatureValue, 398);
+
+            btnResetImageAdjustments.FlatStyle = FlatStyle.Flat;
+            btnResetImageAdjustments.FlatAppearance.BorderSize = 0;
+            btnResetImageAdjustments.BackColor = Color.WhiteSmoke;
+            btnResetImageAdjustments.Location = new Point(398, 4);
+            btnResetImageAdjustments.Size = new Size(18, 20);
+            btnResetImageAdjustments.Click += btnResetImageAdjustments_Click;
+
+            sldrBrightness.ValueChanged += sldrImageAdjustment_ValueChanged;
+            sldrContrast.ValueChanged += sldrImageAdjustment_ValueChanged;
+            sldrColorTemperature.ValueChanged += sldrImageAdjustment_ValueChanged;
+
+            panelImageAdjustments.Controls.Add(lblImageAdjustments);
+            panelImageAdjustments.Controls.Add(lblBrightness);
+            panelImageAdjustments.Controls.Add(sldrBrightness);
+            panelImageAdjustments.Controls.Add(lblBrightnessValue);
+            panelImageAdjustments.Controls.Add(lblContrast);
+            panelImageAdjustments.Controls.Add(sldrContrast);
+            panelImageAdjustments.Controls.Add(lblContrastValue);
+            panelImageAdjustments.Controls.Add(lblColorTemperature);
+            panelImageAdjustments.Controls.Add(sldrColorTemperature);
+            panelImageAdjustments.Controls.Add(lblColorTemperatureValue);
+            panelImageAdjustments.Controls.Add(btnResetImageAdjustments);
+            panelVideoControls.Controls.Add(panelImageAdjustments);
+
+            RefreshImageAdjustmentsCulture();
+        }
+        private static void ConfigureAdjustmentLabel(Label label, int left)
+        {
+            label.Location = new Point(left, 4);
+            label.Size = new Size(14, 18);
+            label.TextAlign = ContentAlignment.MiddleCenter;
+        }
+        private void ConfigureAdjustmentSlider(SliderLinear slider, int left, int width)
+        {
+            slider.Cursor = Cursors.Hand;
+            slider.Location = new Point(left, 2);
+            slider.Size = new Size(width, 20);
+            slider.Minimum = -100;
+            slider.Maximum = 100;
+            slider.Sticky = true;
+            slider.StickyValue = 0;
+            slider.Value = 0;
+        }
+        private static void ConfigureAdjustmentValueLabel(Label label, int left)
+        {
+            label.Location = new Point(left, 4);
+            label.Size = new Size(20, 18);
+            label.TextAlign = ContentAlignment.MiddleCenter;
+        }
+        private void RefreshImageAdjustmentsCulture()
+        {
+            lblImageAdjustments.Text = ScreenManagerLang.ImageAdjustments_Title;
+            lblBrightness.Text = ScreenManagerLang.ImageAdjustments_Brightness_Short;
+            lblContrast.Text = ScreenManagerLang.ImageAdjustments_Contrast_Short;
+            lblColorTemperature.Text = ScreenManagerLang.ImageAdjustments_ColorTemperature_Short;
+            btnResetImageAdjustments.Text = ScreenManagerLang.ImageAdjustments_Reset_Short;
+            UpdateImageAdjustmentValueLabels();
+        }
+        private void btnResetImageAdjustments_Click(object sender, EventArgs e)
+        {
+            SetImageAdjustments(0, 0, 0, true);
+            OnImageAdjustmentsChanged();
+        }
+        private void sldrImageAdjustment_ValueChanged(object sender, EventArgs e)
+        {
+            if (m_UpdatingImageAdjustmentsUI)
+                return;
+
+            m_BrightnessAdjustment = (int)sldrBrightness.Value;
+            m_ContrastAdjustment = (int)sldrContrast.Value;
+            m_ColorTemperatureAdjustment = (int)sldrColorTemperature.Value;
+            UpdateImageAdjustmentMatrix();
+            UpdateImageAdjustmentValueLabels();
+            DoInvalidate();
+            ReportForSyncMerge();
+            OnImageAdjustmentsChanged();
+        }
+        private void OnImageAdjustmentsChanged()
+        {
+            if (ImageAdjustmentsChanged != null)
+                ImageAdjustmentsChanged(this, EventArgs.Empty);
+        }
+        private void UpdateImageAdjustmentValueLabels()
+        {
+            lblBrightnessValue.Text = m_BrightnessAdjustment.ToString(CultureInfo.InvariantCulture);
+            lblContrastValue.Text = m_ContrastAdjustment.ToString(CultureInfo.InvariantCulture);
+            lblColorTemperatureValue.Text = m_ColorTemperatureAdjustment.ToString(CultureInfo.InvariantCulture);
+        }
+        private void UpdateImageAdjustmentMatrix()
+        {
+            float contrast = 1.0f + (m_ContrastAdjustment / 100.0f);
+            contrast = Math.Max(0.0f, Math.Min(2.0f, contrast));
+            float bias = (m_BrightnessAdjustment / 200.0f) + (0.5f * (1.0f - contrast));
+            float temperature = m_ColorTemperatureAdjustment / 100.0f;
+            float redScale = 1.0f + (0.20f * temperature);
+            float blueScale = 1.0f - (0.20f * temperature);
+
+            m_ImageAdjustmentMatrix.Matrix00 = contrast * redScale;
+            m_ImageAdjustmentMatrix.Matrix11 = contrast;
+            m_ImageAdjustmentMatrix.Matrix22 = contrast * blueScale;
+            m_ImageAdjustmentMatrix.Matrix33 = 1.0f;
+            m_ImageAdjustmentMatrix.Matrix44 = 1.0f;
+
+            m_ImageAdjustmentMatrix.Matrix01 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix02 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix03 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix04 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix10 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix12 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix13 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix14 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix20 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix21 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix23 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix24 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix30 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix31 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix32 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix34 = 0.0f;
+            m_ImageAdjustmentMatrix.Matrix43 = 0.0f;
+
+            m_ImageAdjustmentMatrix.Matrix40 = bias;
+            m_ImageAdjustmentMatrix.Matrix41 = bias;
+            m_ImageAdjustmentMatrix.Matrix42 = bias;
+
+            m_ImageAdjustmentsAttr.SetColorMatrix(m_ImageAdjustmentMatrix, ColorMatrixFlag.Default, ColorAdjustType.Bitmap);
+            m_HasImageAdjustments = m_BrightnessAdjustment != 0 || m_ContrastAdjustment != 0 || m_ColorTemperatureAdjustment != 0;
         }
         #endregion
 
@@ -3450,6 +3694,14 @@ namespace Kinovea.ScreenManager
                     mnuConfigureTrajectory_Click(null, EventArgs.Empty);
                 }
             }
+            else if (m_bSyncMerge && SyncMergeSourceSoloAsked != null)
+            {
+                // During SyncMerge, blank double-click on a source solos that overlay on the target.
+                System.ComponentModel.HandledEventArgs args = new System.ComponentModel.HandledEventArgs();
+                SyncMergeSourceSoloAsked(this, args);
+                if (!args.Handled)
+                    ToggleImageFillMode();
+            }
             else
             {
                 ToggleImageFillMode();
@@ -3552,17 +3804,16 @@ namespace Kinovea.ScreenManager
                 // in order to match the rendering size.
                 if (_transform.ZoomWindowInDecodedImage.Size.CloseTo(_renderingSize) && !m_FrameServer.Metadata.Mirrored)
                 {
-                    if (!_transform.Zooming)
+                    if (!_transform.Zooming && !m_HasImageAdjustments)
                     {
                         g.DrawImageUnscaled(_sourceImage, 0, 0);
-                        //log.DebugFormat("draw unscaled.");
                     }
                     else
                     {
-                        int left = -_transform.ZoomWindowInDecodedImage.Left;
-                        int top = -_transform.ZoomWindowInDecodedImage.Top;
-                        g.DrawImageUnscaled(_sourceImage, left, top);
-                        //log.DebugFormat("draw unscaled with zoom.");
+                        Rectangle rSrc = _transform.Zooming ?
+                            _transform.ZoomWindowInDecodedImage :
+                            new Rectangle(0, 0, _sourceImage.Width, _sourceImage.Height);
+                        DrawVideoFrame(_sourceImage, g, rDst, rSrc);
                     }
                 }
                 else
@@ -3575,17 +3826,15 @@ namespace Kinovea.ScreenManager
                     else
                         rSrc = new Rectangle(0, 0, _sourceImage.Width, _sourceImage.Height);
 
-                    g.DrawImage(_sourceImage, rDst, rSrc, GraphicsUnit.Pixel);
-                    //log.DebugFormat("draw scaled at custom decoding size.");
+                    DrawVideoFrame(_sourceImage, g, rDst, rSrc);
                 }
             }
             else
             {
-                if (!_transform.Zooming && !m_FrameServer.Metadata.Mirrored && _transform.Stretch == 1.0f && _transform.DecodingScale == 1.0)
+                if (!_transform.Zooming && !m_FrameServer.Metadata.Mirrored && _transform.Stretch == 1.0f && _transform.DecodingScale == 1.0 && !m_HasImageAdjustments)
                 {
                     // This allow to draw unscaled while tracking or caching for example, provided we are rendering at original size.
                     g.DrawImageUnscaled(_sourceImage, 0, 0);
-                    //log.DebugFormat("drawing unscaled because at the right size.");
                 }
                 else
                 {
@@ -3595,8 +3844,7 @@ namespace Kinovea.ScreenManager
                     else
                         rSrc = new Rectangle(0, 0, _sourceImage.Width, _sourceImage.Height);
 
-                    g.DrawImage(_sourceImage, rDst, rSrc, GraphicsUnit.Pixel);
-                    //log.DebugFormat("drawing scaled.");
+                    DrawVideoFrame(_sourceImage, g, rDst, rSrc);
                 }
             }
 
@@ -3626,6 +3874,16 @@ namespace Kinovea.ScreenManager
                 FlushDrawingsOnGraphics(g, _transform, _iKeyFrameIndex, _iPosition);
                 FlushMagnifierOnGraphics(_sourceImage, g, _transform);
             }
+        }
+        private void DrawVideoFrame(Bitmap sourceImage, Graphics g, Rectangle rDst, Rectangle rSrc)
+        {
+            if (!m_HasImageAdjustments)
+            {
+                g.DrawImage(sourceImage, rDst, rSrc, GraphicsUnit.Pixel);
+                return;
+            }
+
+            g.DrawImage(sourceImage, rDst, rSrc.X, rSrc.Y, rSrc.Width, rSrc.Height, GraphicsUnit.Pixel, m_ImageAdjustmentsAttr);
         }
         private void FlushDrawingsOnGraphics(Graphics canvas, ImageTransform transformer, int keyFrameIndex, long timestamp)
         {
@@ -4840,10 +5098,10 @@ namespace Kinovea.ScreenManager
             else
                 rDst = new Rectangle(0, 0, copySize.Width, copySize.Height);
             
-            if(m_viewportManipulator.MayDrawUnscaled && m_FrameServer.VideoReader.CanDrawUnscaled)
-                g.DrawImage(m_FrameServer.CurrentImage, rDst, m_FrameServer.ImageTransform.ZoomWindowInDecodedImage, GraphicsUnit.Pixel);
+            if (m_viewportManipulator.MayDrawUnscaled && m_FrameServer.VideoReader.CanDrawUnscaled)
+                DrawVideoFrame(m_FrameServer.CurrentImage, g, rDst, m_FrameServer.ImageTransform.ZoomWindowInDecodedImage);
             else
-                g.DrawImage(m_FrameServer.CurrentImage, rDst, m_FrameServer.ImageTransform.ZoomWindow, GraphicsUnit.Pixel);
+                DrawVideoFrame(m_FrameServer.CurrentImage, g, rDst, m_FrameServer.ImageTransform.ZoomWindow);
                 
             return copy;
         }
@@ -4873,6 +5131,10 @@ namespace Kinovea.ScreenManager
             trkFrame.Enabled = _bEnable;
             trkSelection.Enabled = _bEnable;
             sldrSpeed.Enabled = _bEnable;
+            sldrBrightness.Enabled = _bEnable;
+            sldrContrast.Enabled = _bEnable;
+            sldrColorTemperature.Enabled = _bEnable;
+            btnResetImageAdjustments.Enabled = _bEnable;
             
             btnRafale.Enabled = _bEnable;
             btnSaveVideo.Enabled = _bEnable;

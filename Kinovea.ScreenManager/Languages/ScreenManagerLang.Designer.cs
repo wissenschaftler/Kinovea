@@ -3140,6 +3140,30 @@ namespace Kinovea.ScreenManager.Languages {
             get { return ResourceManager.GetString("mnuConfigureScreens", resourceCulture); }
         }
 
+        public static string ImageAdjustments_Title {
+            get { return ResourceManager.GetString("ImageAdjustments_Title", resourceCulture); }
+        }
+
+        public static string ImageAdjustments_Brightness_Short {
+            get { return ResourceManager.GetString("ImageAdjustments_Brightness_Short", resourceCulture); }
+        }
+
+        public static string ImageAdjustments_Contrast_Short {
+            get { return ResourceManager.GetString("ImageAdjustments_Contrast_Short", resourceCulture); }
+        }
+
+        public static string ImageAdjustments_ColorTemperature_Short {
+            get { return ResourceManager.GetString("ImageAdjustments_ColorTemperature_Short", resourceCulture); }
+        }
+
+        public static string ImageAdjustments_Reset {
+            get { return ResourceManager.GetString("ImageAdjustments_Reset", resourceCulture); }
+        }
+
+        public static string ImageAdjustments_Reset_Short {
+            get { return ResourceManager.GetString("ImageAdjustments_Reset_Short", resourceCulture); }
+        }
+
         public static string ScreenLayout_Title {
             get { return ResourceManager.GetString("ScreenLayout_Title", resourceCulture); }
         }

@@ -20,6 +20,7 @@ along with Kinovea. If not, see http://www.gnu.org/licenses/.
 #endregion
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Collections.Generic;
@@ -192,6 +193,24 @@ namespace Kinovea.ScreenManager
             if (images == null || images.Count == 0)
                 return null;
 
+            float[] alphas = new float[images.Count];
+            for (int i = 0; i < alphas.Length; i++)
+                alphas[i] = 1.0f;
+
+            return GetOverlayComposite(images, alphas);
+        }
+
+        /// <summary>
+        /// Build an overlay stack. Images are drawn in list order; later images sit on top.
+        /// Each entry uses the matching alpha in [0, 1].
+        /// </summary>
+        public static Bitmap GetOverlayComposite(IList<Bitmap> images, IList<float> alphas)
+        {
+            if (images == null || images.Count == 0)
+                return null;
+            if (alphas == null || alphas.Count != images.Count)
+                throw new ArgumentException("Alphas must match the image count.");
+
             int width = 0;
             int height = 0;
             foreach (Bitmap image in images)
@@ -205,29 +224,49 @@ namespace Kinovea.ScreenManager
             if (width == 0 || height == 0)
                 return null;
 
-            Bitmap composite = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+            Bitmap composite = new Bitmap(width, height, PixelFormat.Format32bppArgb);
             using (Graphics graphics = Graphics.FromImage(composite))
             {
-                graphics.Clear(Color.Black);
-                int validCount = 0;
-                foreach (Bitmap image in images)
-                {
-                    if (image != null)
-                        validCount++;
-                }
+                graphics.Clear(Color.Transparent);
+                graphics.CompositingMode = CompositingMode.SourceOver;
+                graphics.CompositingQuality = CompositingQuality.HighQuality;
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
-                float alpha = validCount > 0 ? 1.0f / validCount : 1.0f;
-                foreach (Bitmap image in images)
+                Rectangle dest = new Rectangle(0, 0, width, height);
+                for (int i = 0; i < images.Count; i++)
                 {
+                    Bitmap image = images[i];
                     if (image == null)
                         continue;
 
-                    using (ImageAttributes attributes = new ImageAttributes())
+                    float alpha = Math.Max(0.0f, Math.Min(1.0f, alphas[i]));
+                    if (alpha <= 0.001f)
+                        continue;
+
+                    // Draw through a 32bpp layer so later full-frame sources truly cover earlier ones.
+                    using (Bitmap layer = new Bitmap(width, height, PixelFormat.Format32bppArgb))
                     {
-                        ColorMatrix matrix = new ColorMatrix();
-                        matrix.Matrix33 = alpha;
-                        attributes.SetColorMatrix(matrix);
-                        graphics.DrawImage(image, new Rectangle(0, 0, width, height), 0, 0, image.Width, image.Height, GraphicsUnit.Pixel, attributes);
+                        using (Graphics layerGraphics = Graphics.FromImage(layer))
+                        {
+                            layerGraphics.Clear(Color.Transparent);
+                            layerGraphics.DrawImage(image, dest);
+                        }
+
+                        if (alpha >= 0.999f)
+                        {
+                            graphics.DrawImageUnscaled(layer, 0, 0);
+                        }
+                        else
+                        {
+                            using (ImageAttributes attributes = new ImageAttributes())
+                            {
+                                ColorMatrix matrix = new ColorMatrix();
+                                matrix.Matrix33 = alpha;
+                                attributes.SetColorMatrix(matrix, ColorMatrixFlag.Default, ColorAdjustType.Bitmap);
+                                graphics.DrawImage(layer, dest, 0, 0, width, height, GraphicsUnit.Pixel, attributes);
+                            }
+                        }
                     }
                 }
             }
