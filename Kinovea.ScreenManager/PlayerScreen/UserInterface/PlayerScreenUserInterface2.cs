@@ -340,9 +340,15 @@ namespace Kinovea.ScreenManager
         private ComboBox cmbFileSearch = new ComboBox();
         private Button btnFileSearchOpen = new Button();
         private Button btnFileSearchHistory = new Button();
+        private Button btnToggleVideoControls = new Button();
         private FileSearchDropDown fileSearchDropDown = new FileSearchDropDown();
         private bool m_FileSearchInProgress;
         private string m_FileSearchOpenButtonText;
+
+        // 2x2 side controls: None = bottom bar; Left/Right = side strip.
+        private DockStyle m_VideoControlsSide = DockStyle.None;
+        private const int VideoControlsSideWidth = 200;
+        private bool m_VideoControlsResizeHooked;
 
         // Selection and current position. All values in absolute timestamps.
         // trkSelection.minimum and maximum are also in absolute timestamps.
@@ -2897,6 +2903,14 @@ namespace Kinovea.ScreenManager
             panelFileSearch.BackColor = Color.White;
             panelFileSearch.Padding = new Padding(4, 2, 4, 2);
 
+            btnToggleVideoControls.FlatStyle = FlatStyle.Flat;
+            btnToggleVideoControls.FlatAppearance.BorderSize = 0;
+            btnToggleVideoControls.BackColor = Color.WhiteSmoke;
+            btnToggleVideoControls.Dock = DockStyle.Left;
+            btnToggleVideoControls.Width = 22;
+            btnToggleVideoControls.Cursor = Cursors.Hand;
+            btnToggleVideoControls.Click += btnToggleVideoControls_Click;
+
             btnFileSearchOpen.FlatStyle = FlatStyle.Flat;
             btnFileSearchOpen.FlatAppearance.BorderSize = 0;
             btnFileSearchOpen.BackColor = Color.WhiteSmoke;
@@ -2924,13 +2938,30 @@ namespace Kinovea.ScreenManager
 
             fileSearchDropDown.ItemChosen += fileSearchDropDown_ItemChosen;
 
-            // Dock order: Fill first, then Right controls (history then open) so Fill gets remaining space.
+            // Dock order: Fill first, then Right, then Left so Fill gets remaining space.
             panelFileSearch.Controls.Add(cmbFileSearch);
             panelFileSearch.Controls.Add(btnFileSearchHistory);
             panelFileSearch.Controls.Add(btnFileSearchOpen);
+            panelFileSearch.Controls.Add(btnToggleVideoControls);
             this.Controls.Add(panelFileSearch);
 
             RefreshFileSearchCulture();
+            RefreshToggleVideoControlsUi();
+        }
+
+        private void btnToggleVideoControls_Click(object sender, EventArgs e)
+        {
+            panelVideoControls.Visible = !panelVideoControls.Visible;
+            RefreshToggleVideoControlsUi();
+        }
+
+        private void RefreshToggleVideoControlsUi()
+        {
+            bool visible = panelVideoControls.Visible;
+            // Visible: point down (controls below/side shown); hidden: point right (collapsed).
+            btnToggleVideoControls.Text = visible ? "▾" : "▸";
+            toolTips.SetToolTip(btnToggleVideoControls,
+                visible ? ScreenManagerLang.VideoControls_ToggleHideTooltip : ScreenManagerLang.VideoControls_ToggleShowTooltip);
         }
 
         private void RefreshFileSearchCulture()
@@ -2941,6 +2972,7 @@ namespace Kinovea.ScreenManager
             toolTips.SetToolTip(btnFileSearchOpen, ScreenManagerLang.FileSearch_OpenTooltip);
             toolTips.SetToolTip(btnFileSearchHistory, ScreenManagerLang.FileSearch_HistoryTooltip);
             toolTips.SetToolTip(cmbFileSearch, ScreenManagerLang.FileSearch_Placeholder);
+            RefreshToggleVideoControlsUi();
         }
 
         private void cmbFileSearch_DropDown(object sender, EventArgs e)
@@ -3110,12 +3142,235 @@ namespace Kinovea.ScreenManager
 
         private void InitializeImageAdjustmentsControls()
         {
-            panelVideoControls.MinimumSize = new Size(panelVideoControls.MinimumSize.Width, 126);
-            panelVideoControls.Size = new Size(panelVideoControls.Width, 152);
+            btnResetImageAdjustments.FlatStyle = FlatStyle.Flat;
+            btnResetImageAdjustments.FlatAppearance.BorderSize = 0;
+            btnResetImageAdjustments.BackColor = Color.WhiteSmoke;
+            btnResetImageAdjustments.Size = new Size(22, 20);
+            btnResetImageAdjustments.Click += btnResetImageAdjustments_Click;
 
+            ConfigureAdjustmentSlider(sldrBrightness, 42, 95);
+            ConfigureAdjustmentSlider(sldrContrast, 172, 95);
+            ConfigureAdjustmentSlider(sldrColorTemperature, 302, 95);
+            sldrBrightness.Value = 0;
+            sldrContrast.Value = 0;
+            sldrColorTemperature.Value = 0;
+
+            sldrBrightness.ValueChanged += sldrImageAdjustment_ValueChanged;
+            sldrContrast.ValueChanged += sldrImageAdjustment_ValueChanged;
+            sldrColorTemperature.ValueChanged += sldrImageAdjustment_ValueChanged;
+
+            panelImageAdjustments.BackColor = Color.White;
+            panelImageAdjustments.Controls.Add(lblImageAdjustments);
+            panelImageAdjustments.Controls.Add(lblBrightness);
+            panelImageAdjustments.Controls.Add(sldrBrightness);
+            panelImageAdjustments.Controls.Add(lblBrightnessValue);
+            panelImageAdjustments.Controls.Add(lblContrast);
+            panelImageAdjustments.Controls.Add(sldrContrast);
+            panelImageAdjustments.Controls.Add(lblContrastValue);
+            panelImageAdjustments.Controls.Add(lblColorTemperature);
+            panelImageAdjustments.Controls.Add(sldrColorTemperature);
+            panelImageAdjustments.Controls.Add(lblColorTemperatureValue);
+            panelImageAdjustments.Controls.Add(btnResetImageAdjustments);
+            panelVideoControls.Controls.Add(panelImageAdjustments);
+
+            ApplyImageAdjustmentsBottomLayout();
+            RefreshImageAdjustmentsCulture();
+        }
+
+        /// <summary>
+        /// For true 2×2 only: left column docks controls Left, right column Right.
+        /// 1×2 and other layouts keep the bottom bar.
+        /// </summary>
+        public void ApplyControlsLayout(int index, int columns, int rows)
+        {
+            DockStyle desired = DockStyle.None;
+            if (columns == 2 && rows == 2)
+                desired = (index % 2 == 0) ? DockStyle.Left : DockStyle.Right;
+
+            if (desired == m_VideoControlsSide)
+                return;
+
+            SuspendLayout();
+            panelVideoControls.SuspendLayout();
+            try
+            {
+                m_VideoControlsSide = desired;
+                if (desired == DockStyle.None)
+                    LayoutVideoControlsBottom();
+                else
+                    LayoutVideoControlsSide(desired);
+            }
+            finally
+            {
+                panelVideoControls.ResumeLayout(true);
+                ResumeLayout(true);
+            }
+        }
+
+        private void EnsureVideoControlsResizeHooked()
+        {
+            if (m_VideoControlsResizeHooked)
+                return;
+            panelVideoControls.Resize += PanelVideoControls_ResizeForSideLayout;
+            m_VideoControlsResizeHooked = true;
+        }
+
+        private void PanelVideoControls_ResizeForSideLayout(object sender, EventArgs e)
+        {
+            if (m_VideoControlsSide == DockStyle.None)
+                return;
+            UpdateSideLayoutWidths();
+        }
+
+        private void UpdateSideLayoutWidths()
+        {
+            int w = Math.Max(160, panelVideoControls.ClientSize.Width - 16);
+            trkSelection.Width = w;
+            trkFrame.Width = w;
+            sldrSpeed.Width = w;
+            if (panelImageAdjustments.Width != panelVideoControls.ClientSize.Width - 8)
+            {
+                panelImageAdjustments.Width = Math.Max(150, panelVideoControls.ClientSize.Width - 8);
+                ApplyImageAdjustmentsSideLayout();
+            }
+        }
+
+        private void LayoutVideoControlsBottom()
+        {
+            panelVideoControls.Dock = DockStyle.Bottom;
+            panelVideoControls.MinimumSize = new Size(175, 126);
+            panelVideoControls.Height = 152;
+
+            // Designer positions
+            btnTimeOrigin.Location = new Point(5, 5);
+            btn_HandlersLock.Location = new Point(25, 5);
+            btnSetHandlerLeft.Location = new Point(45, 5);
+            btnSetHandlerRight.Location = new Point(65, 5);
+            btnHandlersReset.Location = new Point(85, 5);
+
+            trkSelection.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            trkSelection.Location = new Point(111, 5);
+            trkSelection.Size = new Size(Math.Max(50, panelVideoControls.Width - 114), 20);
+
+            lblWorkingZone.Location = new Point(14, 24);
+            lblSelStartSelection.Location = new Point(108, 24);
+            lblSelStartSelection.Size = new Size(88, 15);
+            lblSelDuration.Location = new Point(220, 24);
+            lblSelDuration.Size = new Size(91, 15);
+
+            trkFrame.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            trkFrame.Location = new Point(5, 45);
+            trkFrame.Size = new Size(Math.Max(50, panelVideoControls.Width - 10), 20);
+
+            lblTimeCode.Location = new Point(14, 64);
+            lblSpeedTuner.Location = new Point(142, 64);
+            sldrSpeed.Location = new Point(218, 63);
+            sldrSpeed.Size = new Size(176, 23);
+
+            buttonGotoFirst.Location = new Point(23, 89);
+            buttonGotoPrevious.Location = new Point(47, 89);
+            buttonPlay.Location = new Point(77, 83);
+            buttonGotoNext.Location = new Point(123, 89);
+            buttonGotoLast.Location = new Point(147, 89);
+            btnPlayingMode.Location = new Point(196, 87);
+
+            panel1.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            panel1.Location = new Point(Math.Max(0, panelVideoControls.Width - 180), 78);
+            panel1.Size = new Size(185, 46);
+
+            ApplyImageAdjustmentsBottomLayout();
+
+            // Dock order: Fill first in z-order sense — Top/Bottom claim edges; Fill gets remainder.
+            Controls.SetChildIndex(splitKeyframes, 0);
+            Controls.SetChildIndex(panelVideoControls, 1);
+            Controls.SetChildIndex(panelTop, 2);
+        }
+
+        private void LayoutVideoControlsSide(DockStyle side)
+        {
+            EnsureVideoControlsResizeHooked();
+
+            panelVideoControls.Dock = side;
+            panelVideoControls.MinimumSize = new Size(180, 200);
+            panelVideoControls.Width = VideoControlsSideWidth;
+
+            int margin = 8;
+            int w = Math.Max(160, VideoControlsSideWidth - 16);
+            int y = 6;
+
+            // Working-zone button row
+            btnTimeOrigin.Location = new Point(margin, y);
+            btn_HandlersLock.Location = new Point(margin + 22, y);
+            btnSetHandlerLeft.Location = new Point(margin + 44, y);
+            btnSetHandlerRight.Location = new Point(margin + 66, y);
+            btnHandlersReset.Location = new Point(margin + 88, y);
+            y += 24;
+
+            lblWorkingZone.Location = new Point(margin, y);
+            y += 16;
+            lblSelStartSelection.Location = new Point(margin, y);
+            lblSelStartSelection.Size = new Size(w, 15);
+            y += 16;
+            lblSelDuration.Location = new Point(margin, y);
+            lblSelDuration.Size = new Size(w, 15);
+            y += 18;
+
+            trkSelection.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            trkSelection.Location = new Point(margin, y);
+            trkSelection.Size = new Size(w, 20);
+            y += 24;
+
+            trkFrame.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            trkFrame.Location = new Point(margin, y);
+            trkFrame.Size = new Size(w, 20);
+            y += 26;
+
+            lblTimeCode.Location = new Point(margin, y);
+            y += 16;
+
+            // Play cluster centered-ish in strip
+            int playLeft = margin + 4;
+            buttonGotoFirst.Location = new Point(playLeft, y + 6);
+            buttonGotoPrevious.Location = new Point(playLeft + 24, y + 6);
+            buttonPlay.Location = new Point(playLeft + 50, y);
+            buttonGotoNext.Location = new Point(playLeft + 96, y + 6);
+            buttonGotoLast.Location = new Point(playLeft + 120, y + 6);
+            btnPlayingMode.Location = new Point(playLeft + 150, y + 6);
+            y += 36;
+
+            lblSpeedTuner.Location = new Point(margin, y);
+            y += 14;
+            sldrSpeed.Location = new Point(margin, y);
+            sldrSpeed.Size = new Size(w, 23);
+            y += 28;
+
+            panel1.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            panel1.Location = new Point(Math.Max(margin, (VideoControlsSideWidth - 185) / 2), y);
+            panel1.Size = new Size(185, 46);
+            y += 52;
+
+            panelImageAdjustments.Dock = DockStyle.None;
+            panelImageAdjustments.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            panelImageAdjustments.Location = new Point(4, y);
+            panelImageAdjustments.Size = new Size(VideoControlsSideWidth - 8, 100);
+            ApplyImageAdjustmentsSideLayout();
+
+            Controls.SetChildIndex(splitKeyframes, 0);
+            Controls.SetChildIndex(panelVideoControls, 1);
+            Controls.SetChildIndex(panelTop, 2);
+        }
+
+        private void ApplyImageAdjustmentsBottomLayout()
+        {
+            panelVideoControls.MinimumSize = new Size(panelVideoControls.MinimumSize.Width, 126);
+            if (m_VideoControlsSide == DockStyle.None)
+                panelVideoControls.Height = 152;
+
+            // Set Dock last: assigning Anchor after Dock clears Dock in WinForms,
+            // which left B/C/T floating and invisible in non-2×2 (bottom) layouts.
+            panelImageAdjustments.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             panelImageAdjustments.Dock = DockStyle.Bottom;
             panelImageAdjustments.Height = 28;
-            panelImageAdjustments.BackColor = Color.White;
 
             lblImageAdjustments.Location = new Point(6, 6);
             lblImageAdjustments.Size = new Size(22, 16);
@@ -3132,33 +3387,59 @@ namespace Kinovea.ScreenManager
             ConfigureAdjustmentSlider(sldrColorTemperature, 302, 95);
             ConfigureAdjustmentValueLabel(lblColorTemperatureValue, 398);
 
-            btnResetImageAdjustments.FlatStyle = FlatStyle.Flat;
-            btnResetImageAdjustments.FlatAppearance.BorderSize = 0;
-            btnResetImageAdjustments.BackColor = Color.WhiteSmoke;
-            // Sit to the right of the color-temperature value label (they previously shared X=398).
             btnResetImageAdjustments.Location = new Point(424, 4);
             btnResetImageAdjustments.Size = new Size(22, 20);
-            btnResetImageAdjustments.Click += btnResetImageAdjustments_Click;
 
-            sldrBrightness.ValueChanged += sldrImageAdjustment_ValueChanged;
-            sldrContrast.ValueChanged += sldrImageAdjustment_ValueChanged;
-            sldrColorTemperature.ValueChanged += sldrImageAdjustment_ValueChanged;
-
-            panelImageAdjustments.Controls.Add(lblImageAdjustments);
-            panelImageAdjustments.Controls.Add(lblBrightness);
-            panelImageAdjustments.Controls.Add(sldrBrightness);
-            panelImageAdjustments.Controls.Add(lblBrightnessValue);
-            panelImageAdjustments.Controls.Add(lblContrast);
-            panelImageAdjustments.Controls.Add(sldrContrast);
-            panelImageAdjustments.Controls.Add(lblContrastValue);
-            panelImageAdjustments.Controls.Add(lblColorTemperature);
-            panelImageAdjustments.Controls.Add(sldrColorTemperature);
-            panelImageAdjustments.Controls.Add(lblColorTemperatureValue);
-            panelImageAdjustments.Controls.Add(btnResetImageAdjustments);
-            panelVideoControls.Controls.Add(panelImageAdjustments);
-
-            RefreshImageAdjustmentsCulture();
+            panelImageAdjustments.BringToFront();
         }
+
+        private void ApplyImageAdjustmentsSideLayout()
+        {
+            int pad = 4;
+            int rowH = 22;
+            int labelW = 14;
+            int valueW = 22;
+            int sliderW = Math.Max(60, panelImageAdjustments.Width - pad * 2 - labelW - valueW - 8);
+            int y = 4;
+
+            lblImageAdjustments.Location = new Point(pad, y);
+            lblImageAdjustments.Size = new Size(60, 16);
+            y += 18;
+
+            PlaceAdjustmentRow(lblBrightness, sldrBrightness, lblBrightnessValue, pad, y, labelW, sliderW, valueW, false);
+            y += rowH;
+            PlaceAdjustmentRow(lblContrast, sldrContrast, lblContrastValue, pad, y, labelW, sliderW, valueW, false);
+            y += rowH;
+            PlaceAdjustmentRow(lblColorTemperature, sldrColorTemperature, lblColorTemperatureValue, pad, y, labelW, sliderW, valueW, false);
+            y += rowH;
+
+            btnResetImageAdjustments.Location = new Point(pad, y);
+            btnResetImageAdjustments.Size = new Size(22, 20);
+
+            panelImageAdjustments.Height = y + 24;
+        }
+
+        private void PlaceAdjustmentRow(Label label, SliderLinear slider, Label valueLabel, int left, int top, int labelW, int sliderW, int valueW, bool resetValue)
+        {
+            label.Location = new Point(left, top + 2);
+            label.Size = new Size(labelW, 18);
+            label.TextAlign = ContentAlignment.MiddleCenter;
+
+            slider.Cursor = Cursors.Hand;
+            slider.Location = new Point(left + labelW + 4, top);
+            slider.Size = new Size(sliderW, 20);
+            slider.Minimum = -100;
+            slider.Maximum = 100;
+            slider.Sticky = true;
+            slider.StickyValue = 0;
+            if (resetValue)
+                slider.Value = 0;
+
+            valueLabel.Location = new Point(left + labelW + 8 + sliderW, top + 2);
+            valueLabel.Size = new Size(valueW, 18);
+            valueLabel.TextAlign = ContentAlignment.MiddleCenter;
+        }
+
         private static void ConfigureAdjustmentLabel(Label label, int left)
         {
             label.Location = new Point(left, 4);
@@ -3174,7 +3455,6 @@ namespace Kinovea.ScreenManager
             slider.Maximum = 100;
             slider.Sticky = true;
             slider.StickyValue = 0;
-            slider.Value = 0;
         }
         private static void ConfigureAdjustmentValueLabel(Label label, int left)
         {

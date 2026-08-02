@@ -300,6 +300,10 @@
   </data>
   <data name="FileSearch_Placeholder" xml:space="preserve"><value>路径或关键字…</value>
   </data>
+  <data name="VideoControls_ToggleShowTooltip" xml:space="preserve"><value>显示播放控制条</value>
+  </data>
+  <data name="VideoControls_ToggleHideTooltip" xml:space="preserve"><value>隐藏播放控制条</value>
+  </data>
   <data name="FileSearch_PathNotFound" xml:space="preserve"><value>找不到文件：\n{0}</value>
   </data>
   <data name="FileSearch_NoResults" xml:space="preserve"><value>在最近文件夹、常用目录及本机固定盘后台扫描中，均未找到匹配“{0}”的视频。</value>

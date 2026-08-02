@@ -366,6 +366,8 @@
    <data name="FileSearch_PathNotFound" xml:space="preserve"><value>File not found:\n{0}</value></data>
    <data name="FileSearch_NoResults" xml:space="preserve"><value>No videos matched “{0}” in recent folders, shortcuts, or a background fixed-drive scan.</value></data>
    <data name="FileSearch_ResultsTitle" xml:space="preserve"><value>Results for “{0}”</value></data>
+   <data name="VideoControls_ToggleShowTooltip" xml:space="preserve"><value>Show playback controls</value></data>
+   <data name="VideoControls_ToggleHideTooltip" xml:space="preserve"><value>Hide playback controls</value></data>
    <data name="ScreenLayout_Title" xml:space="preserve"><value>Configure screen layout</value></data>
    <data name="ScreenLayout_Count" xml:space="preserve"><value>Number of screens:</value></data>
    <data name="ScreenLayout_Screen" xml:space="preserve"><value>Screen {0}:</value></data>

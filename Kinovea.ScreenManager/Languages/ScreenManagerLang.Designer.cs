@@ -3208,6 +3208,14 @@ namespace Kinovea.ScreenManager.Languages {
             get { return ResourceManager.GetString("FileSearch_ResultsTitle", resourceCulture); }
         }
 
+        public static string VideoControls_ToggleShowTooltip {
+            get { return ResourceManager.GetString("VideoControls_ToggleShowTooltip", resourceCulture); }
+        }
+
+        public static string VideoControls_ToggleHideTooltip {
+            get { return ResourceManager.GetString("VideoControls_ToggleHideTooltip", resourceCulture); }
+        }
+
         public static string ScreenLayout_Title {
             get { return ResourceManager.GetString("ScreenLayout_Title", resourceCulture); }
         }

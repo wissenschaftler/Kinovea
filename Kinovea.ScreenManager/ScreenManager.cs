@@ -1055,7 +1055,12 @@ namespace Kinovea.ScreenManager
             UpdateStatusBar();
 
             for (int i = 0; i < screenList.Count; i++)
+            {
                 screenList[i].Identify(i);
+                PlayerScreen player = screenList[i] as PlayerScreen;
+                if (player != null)
+                    player.ApplyControlsLayout(i, layoutColumns, layoutRows);
+            }
 
             if (captureScreens.Count() > 0 && audioInputLevelMonitor.Enabled)
             {

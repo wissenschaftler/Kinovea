@@ -678,7 +678,11 @@ namespace Kinovea.ScreenManager
             this.index = index;
             view.ScreenIndex = index;
         }
-        
+
+        public void ApplyControlsLayout(int index, int columns, int rows)
+        {
+            view.ApplyControlsLayout(index, columns, rows);
+        }
 
         public override void ExecuteScreenCommand(int cmd)
         {
