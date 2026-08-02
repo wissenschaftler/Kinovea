@@ -1,9 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Xml;
 
 namespace Kinovea.Services
@@ -12,6 +9,16 @@ namespace Kinovea.Services
     public class Workspace
     {
         public List<IScreenDescription> Screens { get; private set; } = new List<IScreenDescription>();
+
+        /// <summary>
+        /// Layout columns. 0 means unspecified (use default grid for screen count).
+        /// </summary>
+        public int Columns { get; set; }
+
+        /// <summary>
+        /// Layout rows. 0 means unspecified (use default grid for screen count).
+        /// </summary>
+        public int Rows { get; set; }
 
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -65,7 +72,7 @@ namespace Kinovea.Services
             using (XmlWriter w = XmlWriter.Create(filename, settings))
             {
                 w.WriteStartElement("KinoveaWorkspace");
-                w.WriteElementString("FormatVersion", "1.0");
+                w.WriteElementString("FormatVersion", "1.1");
                 WriteXML(w);
                 w.WriteEndElement();
             }
@@ -83,14 +90,24 @@ namespace Kinovea.Services
             }
 
             reader.ReadStartElement();
-            //reader.ReadElementContentAsString("FormatVersion", "");
 
             Screens.Clear();
+            Columns = 0;
+            Rows = 0;
 
             while (reader.NodeType == XmlNodeType.Element)
             {
                 switch (reader.Name)
                 {
+                    case "FormatVersion":
+                        reader.ReadElementContentAsString();
+                        break;
+                    case "Columns":
+                        Columns = Math.Max(0, reader.ReadElementContentAsInt());
+                        break;
+                    case "Rows":
+                        Rows = Math.Max(0, reader.ReadElementContentAsInt());
+                        break;
                     case "ScreenDescriptionPlayback":
 
                         ScreenDescriptionPlayback sdp = new ScreenDescriptionPlayback();
@@ -113,6 +130,11 @@ namespace Kinovea.Services
 
         public void WriteXML(XmlWriter w)
         {
+            if (Columns > 0)
+                w.WriteElementString("Columns", Columns.ToString());
+            if (Rows > 0)
+                w.WriteElementString("Rows", Rows.ToString());
+
             foreach (var screen in Screens)
             {
                 if (screen.ScreenType == ScreenType.Playback)

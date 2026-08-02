@@ -80,6 +80,11 @@ namespace Kinovea.ScreenManager
         private int layoutColumns = 1;
         private int layoutRows = 1;
         private readonly List<LayoutSlotCacheEntry> layoutSlotCache = new List<LayoutSlotCacheEntry>();
+        private bool screensSuspended;
+        private SessionScreenSnapshot peakScreenSnapshot;
+        private int peakScreenCount;
+        private readonly Stack<SessionScreenSnapshot.Slot> closedScreensStack = new Stack<SessionScreenSnapshot.Slot>();
+        private const int MaxClosedScreensStack = 10;
         private int dualLaunchSettingsPendingCountdown;
         private List<string> camerasToDiscover = new List<string>();
         private AudioInputLevelMonitor audioInputLevelMonitor = new AudioInputLevelMonitor();
@@ -116,6 +121,8 @@ namespace Kinovea.ScreenManager
         private ToolStripMenuItem mnuFourPlayers = new ToolStripMenuItem();
         private ToolStripMenuItem mnuFourPlayersRow = new ToolStripMenuItem();
         private ToolStripMenuItem mnuInsertScreenRight = new ToolStripMenuItem();
+        private ToolStripMenuItem mnuRestorePeakScreens = new ToolStripMenuItem();
+        private ToolStripMenuItem mnuRestoreLastClosedScreen = new ToolStripMenuItem();
         private ToolStripMenuItem mnuOneCapture = new ToolStripMenuItem();
         private ToolStripMenuItem mnuTwoCaptures = new ToolStripMenuItem();
         private ToolStripMenuItem mnuTwoMixed = new ToolStripMenuItem();
@@ -168,6 +175,8 @@ namespace Kinovea.ScreenManager
         private ToolStripButton toolFourPlayers = new ToolStripButton();
         private ToolStripButton toolFourPlayersRow = new ToolStripButton();
         private ToolStripButton toolInsertScreenRight = new ToolStripButton();
+        private ToolStripButton toolRestorePeakScreens = new ToolStripButton();
+        private ToolStripButton toolRestoreLastClosedScreen = new ToolStripButton();
         private ToolStripButton toolOneCapture = new ToolStripButton();
         private ToolStripButton toolTwoCaptures = new ToolStripButton();
         private ToolStripButton toolTwoMixed = new ToolStripButton();
@@ -291,8 +300,36 @@ namespace Kinovea.ScreenManager
             if (workspace.Screens == null || workspace.Screens.Count == 0)
                 return;
 
+            LaunchSettingsManager.SetLayout(workspace.Columns, workspace.Rows);
             foreach (var sd in workspace.Screens)
                 LaunchSettingsManager.AddScreenDescription(sd);
+        }
+
+        /// <summary>
+        /// Replace the current screens with the contents of a workspace file description.
+        /// </summary>
+        public bool LoadWorkspace(Workspace workspace)
+        {
+            if (workspace == null || workspace.Screens == null || workspace.Screens.Count == 0)
+                return false;
+
+            screensSuspended = false;
+
+            while (screenList.Count > 0)
+            {
+                if (!ScreenRemover.RemoveScreen(this, 0))
+                    break;
+            }
+
+            ClearLayoutSlotCache();
+
+            LaunchSettingsManager.ClearScreenDescriptions();
+            LaunchSettingsManager.SetLayout(workspace.Columns, workspace.Rows);
+            foreach (IScreenDescription screen in workspace.Screens)
+                LaunchSettingsManager.AddScreenDescription(screen);
+
+            ApplyLaunchScreenDescriptions();
+            return true;
         }
         #endregion
 
@@ -440,6 +477,12 @@ namespace Kinovea.ScreenManager
             mnuInsertScreenRight.Image = Properties.Drawings.plus_small;
             mnuInsertScreenRight.Click += (s, e) => InsertScreenToRightOfActive();
             mnuInsertScreenRight.MergeAction = MergeAction.Append;
+            mnuRestorePeakScreens.Image = Properties.Resources.dualplayback;
+            mnuRestorePeakScreens.Click += (s, e) => RestorePeakScreens();
+            mnuRestorePeakScreens.MergeAction = MergeAction.Append;
+            mnuRestoreLastClosedScreen.Image = Properties.Resources.film_close3;
+            mnuRestoreLastClosedScreen.Click += (s, e) => RestoreLastClosedScreen();
+            mnuRestoreLastClosedScreen.MergeAction = MergeAction.Append;
             mnuOneCapture.Image = Properties.Resources.camera_video;
             mnuOneCapture.Click += new EventHandler(mnuOneCaptureOnClick);
             mnuOneCapture.MergeAction = MergeAction.Append;
@@ -470,6 +513,8 @@ namespace Kinovea.ScreenManager
                                                                     mnuFourPlayers,
                                                                     mnuFourPlayersRow,
                                                                     mnuInsertScreenRight,
+                                                                    mnuRestorePeakScreens,
+                                                                    mnuRestoreLastClosedScreen,
                                                                     new ToolStripSeparator(),
                                                                     mnuOneCapture, 
                                                                     mnuTwoCaptures,
@@ -666,6 +711,14 @@ namespace Kinovea.ScreenManager
             toolInsertScreenRight.DisplayStyle = ToolStripItemDisplayStyle.Image;
             toolInsertScreenRight.Image = Properties.Drawings.plus_small;
             toolInsertScreenRight.Click += (s, e) => InsertScreenToRightOfActive();
+
+            toolRestorePeakScreens.DisplayStyle = ToolStripItemDisplayStyle.Image;
+            toolRestorePeakScreens.Image = Properties.Resources.dualplayback;
+            toolRestorePeakScreens.Click += (s, e) => RestorePeakScreens();
+
+            toolRestoreLastClosedScreen.DisplayStyle = ToolStripItemDisplayStyle.Image;
+            toolRestoreLastClosedScreen.Image = Properties.Resources.film_close3;
+            toolRestoreLastClosedScreen.Click += (s, e) => RestoreLastClosedScreen();
             
             toolOneCapture.DisplayStyle = ToolStripItemDisplayStyle.Image;
             toolOneCapture.Image = Properties.Resources.camera_video;
@@ -690,6 +743,8 @@ namespace Kinovea.ScreenManager
                                             toolFourPlayers,
                                             toolFourPlayersRow,
                                             toolInsertScreenRight,
+                                            toolRestorePeakScreens,
+                                            toolRestoreLastClosedScreen,
                                             new ToolStripSeparator(),
                                             toolOneCapture, 
                                             toolTwoCaptures, 
@@ -811,6 +866,17 @@ namespace Kinovea.ScreenManager
                 return;
 
             VideoTypeManager.LoadVideo(filename, index);
+        }
+        private void Player_VideoPathLoadAsked(object sender, EventArgs<string> e)
+        {
+            if (e == null || string.IsNullOrEmpty(e.Value))
+                return;
+
+            int index = GetScreenIndex(sender);
+            if (index == -1)
+                return;
+
+            VideoTypeManager.LoadVideo(e.Value, index);
         }
         private void Player_OpenReplayWatcherAsked(object sender, EventArgs e)
         {
@@ -985,7 +1051,7 @@ namespace Kinovea.ScreenManager
         public void OrganizeScreens()
         {
             SyncLayoutGridToScreenCount();
-            view.OrganizeScreens(screenList, layoutColumns, layoutRows);
+            view.OrganizeScreens(screenList, layoutColumns, layoutRows, screensSuspended);
             UpdateStatusBar();
 
             for (int i = 0; i < screenList.Count; i++)
@@ -1062,6 +1128,8 @@ namespace Kinovea.ScreenManager
         public Workspace ExtractWorkspace()
         {
             Workspace workspace = new Workspace();
+            workspace.Columns = layoutColumns;
+            workspace.Rows = layoutRows;
             foreach (var screen in screenList)
                 workspace.Screens.Add(screen.GetScreenDescription());
 
@@ -1327,6 +1395,15 @@ namespace Kinovea.ScreenManager
             mnuInsertScreenRight.Enabled = canInsertScreen;
             toolInsertScreenRight.Enabled = canInsertScreen;
 
+            bool canRestorePeak = peakScreenSnapshot != null &&
+                peakScreenSnapshot.Slots.Count > screenList.Count;
+            mnuRestorePeakScreens.Enabled = canRestorePeak;
+            toolRestorePeakScreens.Enabled = canRestorePeak;
+
+            bool canRestoreClosed = closedScreensStack.Count > 0;
+            mnuRestoreLastClosedScreen.Enabled = canRestoreClosed;
+            toolRestoreLastClosedScreen.Enabled = canRestoreClosed;
+
             bool allScreensAreEmpty = screenList.Count == 0 || screenList.All(screen => !screen.Full);
             int closeMenuIndex = 0;
             for (int i = 0; i < screenList.Count && closeMenuIndex < closeFileMenus.Length; i++)
@@ -1485,6 +1562,8 @@ namespace Kinovea.ScreenManager
             toolFourPlayers.ToolTipText = ScreenManagerLang.mnuFourPlayers;
             toolFourPlayersRow.ToolTipText = ScreenManagerLang.mnuFourPlayersRow;
             toolInsertScreenRight.ToolTipText = ScreenManagerLang.mnuInsertScreenRight;
+            toolRestorePeakScreens.ToolTipText = ScreenManagerLang.mnuRestorePeakScreens;
+            toolRestoreLastClosedScreen.ToolTipText = ScreenManagerLang.mnuRestoreLastClosedScreen;
             toolOneCapture.ToolTipText = ScreenManagerLang.mnuOneCapture;
             toolTwoCaptures.ToolTipText = ScreenManagerLang.mnuTwoCaptures;
             toolTwoMixed.ToolTipText = ScreenManagerLang.mnuTwoMixed;	
@@ -1521,6 +1600,8 @@ namespace Kinovea.ScreenManager
             mnuFourPlayers.Text = ScreenManagerLang.mnuFourPlayers;
             mnuFourPlayersRow.Text = ScreenManagerLang.mnuFourPlayersRow;
             mnuInsertScreenRight.Text = ScreenManagerLang.mnuInsertScreenRight;
+            mnuRestorePeakScreens.Text = ScreenManagerLang.mnuRestorePeakScreens;
+            mnuRestoreLastClosedScreen.Text = ScreenManagerLang.mnuRestoreLastClosedScreen;
             mnuOneCapture.Text = ScreenManagerLang.mnuOneCapture;
             mnuTwoCaptures.Text = ScreenManagerLang.mnuTwoCaptures;
             mnuTwoMixed.Text = ScreenManagerLang.mnuTwoMixed;
@@ -1602,8 +1683,42 @@ namespace Kinovea.ScreenManager
         }
         private void CloseFile(int screenIndex)
         {
+            AbstractScreen screen = GetScreenAt(screenIndex);
+            SessionScreenSnapshot.Slot closedSlot = null;
+            if (screen != null)
+            {
+                string cacheDirectory = Path.Combine(Software.TempDirectory, "session-closed");
+                try
+                {
+                    if (!Directory.Exists(cacheDirectory))
+                        Directory.CreateDirectory(cacheDirectory);
+                }
+                catch
+                {
+                }
+
+                closedSlot = CreateSessionSlot(screenIndex, screen, cacheDirectory);
+            }
+
             ShiftLayoutSlotCacheAfterClose(screenIndex);
-            ScreenRemover.RemoveScreen(this, screenIndex);
+            if (!ScreenRemover.RemoveScreen(this, screenIndex))
+            {
+                SessionScreenSnapshot.DeleteAnnotationFile(closedSlot);
+                return;
+            }
+
+            if (closedSlot != null)
+            {
+                closedScreensStack.Push(closedSlot);
+                if (closedScreensStack.Count > MaxClosedScreensStack)
+                {
+                    List<SessionScreenSnapshot.Slot> newest = closedScreensStack.Take(MaxClosedScreensStack).ToList();
+                    closedScreensStack.Clear();
+                    for (int i = newest.Count - 1; i >= 0; i--)
+                        closedScreensStack.Push(newest[i]);
+                }
+            }
+
             AfterSharedBufferChange();
             OrganizeScreens();
             OrganizeCommonControls();
@@ -1739,20 +1854,63 @@ namespace Kinovea.ScreenManager
         #region View
         private void mnuHome_OnClick(object sender, EventArgs e)
         {
-            // Remove all screens.
+            if (screensSuspended)
+            {
+                LeaveBrowserMode();
+                return;
+            }
+
             if (screenList.Count <= 0)
                 return;
 
-            while (screenList.Count > 0)
-            {
-                if (!ScreenRemover.RemoveScreen(this, 0))
-                    break;
-            }
+            EnterBrowserMode();
+        }
 
-            ClearLayoutSlotCache();
+        private void EnterBrowserMode()
+        {
+            DoStopPlaying();
+            screensSuspended = true;
             OrganizeScreens();
             OrganizeCommonControls();
             OrganizeMenus();
+        }
+
+        private void LeaveBrowserMode()
+        {
+            if (!screensSuspended)
+                return;
+
+            screensSuspended = false;
+            OrganizeScreens();
+            OrganizeCommonControls();
+            OrganizeMenus();
+        }
+
+        /// <summary>
+        /// When opening a file from the Home browser while screens are suspended,
+        /// discard the suspended session and start fresh.
+        /// </summary>
+        private bool DiscardSuspendedScreensForNewFile()
+        {
+            if (!screensSuspended)
+                return true;
+
+            screensSuspended = false;
+            while (screenList.Count > 0)
+            {
+                if (!ScreenRemover.RemoveScreen(this, 0))
+                {
+                    // User cancelled a dirty save — stay in browser with remaining screens suspended.
+                    screensSuspended = screenList.Count > 0;
+                    OrganizeScreens();
+                    OrganizeCommonControls();
+                    OrganizeMenus();
+                    return false;
+                }
+            }
+
+            ClearLayoutSlotCache();
+            return true;
         }
         private void mnuOnePlayerOnClick(object sender, EventArgs e)
         {
@@ -2015,6 +2173,9 @@ namespace Kinovea.ScreenManager
         #region Services
         private void VideoTypeManager_VideoLoadAsked(object sender, VideoLoadAskedEventArgs e)
         {
+            if (!DiscardSuspendedScreensForNewFile())
+                return;
+
             DoLoadMovieInScreen(e.Path, e.Target);
         }
         
@@ -2070,6 +2231,9 @@ namespace Kinovea.ScreenManager
 
         private void View_FileLoadAsked(object source, FileLoadAskedEventArgs e)
         {
+            if (!DiscardSuspendedScreensForNewFile())
+                return;
+
             DoLoadMovieInScreen(e.Source, e.Target);
         }
         private void View_ScreenSwapAsked(object source, EventArgs<Pair<int, int>> e)
@@ -2098,10 +2262,18 @@ namespace Kinovea.ScreenManager
 
         private void CameraTypeManager_CameraLoadAsked(object source, CameraLoadAskedEventArgs e)
         {
+            if (!DiscardSuspendedScreensForNewFile())
+                return;
+
             DoLoadCameraInScreen(e.Source, e.Target);
         }
 
         private void View_AutoLaunchAsked(object source, EventArgs e)
+        {
+            ApplyLaunchScreenDescriptions();
+        }
+
+        private void ApplyLaunchScreenDescriptions()
         {
             int reloaded = 0;
 
@@ -2149,9 +2321,26 @@ namespace Kinovea.ScreenManager
 
             if (reloaded > 0)
             {
+                ApplyLaunchLayoutGrid(reloaded);
                 OrganizeScreens();
                 OrganizeCommonControls();
                 OrganizeMenus();
+                MaybeUpdatePeakSnapshot();
+            }
+        }
+
+        private void ApplyLaunchLayoutGrid(int screenCount)
+        {
+            int columns = LaunchSettingsManager.LayoutColumns;
+            int rows = LaunchSettingsManager.LayoutRows;
+            if (columns > 0 && rows > 0 && columns * rows == screenCount)
+            {
+                layoutColumns = columns;
+                layoutRows = rows;
+            }
+            else
+            {
+                ScreenLayoutSpec.GetDefaultGrid(screenCount, out layoutColumns, out layoutRows);
             }
         }
 
@@ -2251,6 +2440,9 @@ namespace Kinovea.ScreenManager
             if (spec == null)
                 return false;
 
+            if (screensSuspended)
+                LeaveBrowserMode();
+
             // Shrink from the end: cache videos before closing so they can be restored later.
             for (int i = screenList.Count - 1; i >= spec.ScreenCount; i--)
             {
@@ -2300,6 +2492,7 @@ namespace Kinovea.ScreenManager
             if (canShowCommonControls)
                 ResetSync();
 
+            MaybeUpdatePeakSnapshot();
             return true;
         }
 
@@ -2311,6 +2504,9 @@ namespace Kinovea.ScreenManager
         {
             if (screenList.Count == 0)
                 return false;
+
+            if (screensSuspended)
+                LeaveBrowserMode();
 
             int activeIndex = activeScreen != null ? screenList.IndexOf(activeScreen) : -1;
             if (activeIndex < 0)
@@ -2344,7 +2540,214 @@ namespace Kinovea.ScreenManager
             if (canShowCommonControls)
                 ResetSync();
 
+            MaybeUpdatePeakSnapshot();
             return true;
+        }
+
+        private void MaybeUpdatePeakSnapshot()
+        {
+            if (screenList.Count <= peakScreenCount)
+                return;
+
+            peakScreenCount = screenList.Count;
+            if (peakScreenSnapshot != null)
+                peakScreenSnapshot.ClearAnnotationFiles();
+
+            peakScreenSnapshot = CaptureSessionSnapshot("session-peak");
+            OrganizeMenus();
+        }
+
+        private SessionScreenSnapshot CaptureSessionSnapshot(string cacheSubFolder)
+        {
+            SessionScreenSnapshot snapshot = new SessionScreenSnapshot();
+            SyncLayoutGridToScreenCount();
+            snapshot.Columns = layoutColumns;
+            snapshot.Rows = layoutRows;
+
+            string cacheDirectory = Path.Combine(Software.TempDirectory, cacheSubFolder);
+            try
+            {
+                if (!Directory.Exists(cacheDirectory))
+                    Directory.CreateDirectory(cacheDirectory);
+            }
+            catch (Exception e)
+            {
+                log.ErrorFormat("Failed to create session cache directory {0}.", cacheDirectory);
+                log.Error(e.ToString());
+            }
+
+            for (int i = 0; i < screenList.Count; i++)
+            {
+                AbstractScreen screen = screenList[i];
+                SessionScreenSnapshot.Slot slot = CreateSessionSlot(i, screen, cacheDirectory);
+                if (slot != null)
+                    snapshot.Slots.Add(slot);
+            }
+
+            return snapshot;
+        }
+
+        private SessionScreenSnapshot.Slot CreateSessionSlot(int index, AbstractScreen screen, string cacheDirectory)
+        {
+            if (screen == null)
+                return null;
+
+            IScreenDescription description = screen.GetScreenDescription();
+            ScreenDescriptionPlayback playback = description as ScreenDescriptionPlayback;
+            if (playback != null)
+            {
+                playback.Autoplay = false;
+                if (string.IsNullOrEmpty(playback.FullPath) && !playback.IsReplayWatcher && !screen.Full)
+                {
+                    // Keep empty playback placeholders in peak snapshots.
+                }
+            }
+
+            string annotationsPath = null;
+            PlayerScreen player = screen as PlayerScreen;
+            if (player != null && player.FrameServer != null && player.FrameServer.Metadata != null && player.Full)
+            {
+                try
+                {
+                    annotationsPath = Path.Combine(cacheDirectory, Guid.NewGuid().ToString() + ".kva");
+                    MetadataSerializer serializer = new MetadataSerializer();
+                    serializer.SaveToFile(player.FrameServer.Metadata, annotationsPath);
+                }
+                catch (Exception e)
+                {
+                    log.ErrorFormat("Failed to cache annotations for session slot {0}.", index);
+                    log.Error(e.ToString());
+                    annotationsPath = null;
+                }
+            }
+
+            return new SessionScreenSnapshot.Slot
+            {
+                Index = index,
+                ScreenType = screen is CaptureScreen ? ScreenType.Capture : ScreenType.Playback,
+                Description = description,
+                AnnotationsPath = annotationsPath
+            };
+        }
+
+        private void RestorePeakScreens()
+        {
+            if (peakScreenSnapshot == null || peakScreenSnapshot.Slots.Count == 0)
+                return;
+            if (screenList.Count >= peakScreenSnapshot.Slots.Count)
+                return;
+
+            if (screensSuspended)
+                LeaveBrowserMode();
+
+            ApplySessionSnapshot(peakScreenSnapshot, keepPeak: true);
+        }
+
+        private void RestoreLastClosedScreen()
+        {
+            if (closedScreensStack.Count == 0)
+                return;
+
+            if (screensSuspended)
+                LeaveBrowserMode();
+
+            SessionScreenSnapshot.Slot slot = closedScreensStack.Pop();
+            int insertIndex = Math.Min(Math.Max(0, slot.Index), screenList.Count);
+
+            AbstractScreen inserted = slot.ScreenType == ScreenType.Capture ?
+                (AbstractScreen)new CaptureScreen() : new PlayerScreen();
+            inserted.RefreshUICulture();
+            ShiftLayoutSlotCacheAfterInsert(insertIndex);
+            AddScreenAt(inserted, insertIndex);
+
+            layoutColumns = screenList.Count;
+            layoutRows = 1;
+
+            AfterSharedBufferChange();
+            OrganizeScreens();
+            OrganizeCommonControls();
+            OrganizeMenus();
+
+            RestoreSessionSlot(insertIndex, slot);
+            SessionScreenSnapshot.DeleteAnnotationFile(slot);
+            MaybeUpdatePeakSnapshot();
+            OrganizeMenus();
+        }
+
+        private void ApplySessionSnapshot(SessionScreenSnapshot snapshot, bool keepPeak)
+        {
+            if (snapshot == null || snapshot.Slots.Count == 0)
+                return;
+
+            while (screenList.Count > 0)
+            {
+                if (!ScreenRemover.RemoveScreen(this, 0))
+                    return;
+            }
+
+            ClearLayoutSlotCache();
+
+            for (int i = 0; i < snapshot.Slots.Count; i++)
+            {
+                SessionScreenSnapshot.Slot slot = snapshot.Slots[i];
+                AbstractScreen screen = slot.ScreenType == ScreenType.Capture ?
+                    (AbstractScreen)new CaptureScreen() : new PlayerScreen();
+                screen.RefreshUICulture();
+                AddScreenAt(screen, i);
+            }
+
+            if (snapshot.Columns > 0 && snapshot.Rows > 0 && snapshot.Columns * snapshot.Rows == snapshot.Slots.Count)
+            {
+                layoutColumns = snapshot.Columns;
+                layoutRows = snapshot.Rows;
+            }
+            else
+            {
+                ScreenLayoutSpec.GetDefaultGrid(snapshot.Slots.Count, out layoutColumns, out layoutRows);
+            }
+
+            AfterSharedBufferChange();
+            OrganizeScreens();
+            OrganizeCommonControls();
+            OrganizeMenus();
+
+            dualLaunchSettingsPendingCountdown = snapshot.Slots.Count(s => s.ScreenType == ScreenType.Playback && s.Description is ScreenDescriptionPlayback);
+            for (int i = 0; i < snapshot.Slots.Count; i++)
+                RestoreSessionSlot(i, snapshot.Slots[i]);
+
+            if (!keepPeak)
+            {
+                snapshot.ClearAnnotationFiles();
+            }
+
+            MaybeUpdatePeakSnapshot();
+            if (canShowCommonControls)
+                ResetSync();
+        }
+
+        private void RestoreSessionSlot(int index, SessionScreenSnapshot.Slot slot)
+        {
+            if (slot == null)
+                return;
+
+            AbstractScreen screen = GetScreenAt(index);
+            if (screen == null)
+                return;
+
+            ScreenDescriptionPlayback playback = slot.Description as ScreenDescriptionPlayback;
+            if (playback != null && screen is PlayerScreen)
+            {
+                if (!string.IsNullOrEmpty(playback.FullPath) || playback.IsReplayWatcher)
+                {
+                    LoaderVideo.LoadVideoInScreen(this, playback.FullPath, index, playback);
+                    PlayerScreen player = GetScreenAt(index) as PlayerScreen;
+                    if (player != null && player.Full &&
+                        !string.IsNullOrEmpty(slot.AnnotationsPath) && File.Exists(slot.AnnotationsPath))
+                    {
+                        player.LoadKVA(slot.AnnotationsPath);
+                    }
+                }
+            }
         }
 
         private void EnsureLayoutSlotCacheSize(int size)
@@ -2658,6 +3061,7 @@ namespace Kinovea.ScreenManager
         private void AddPlayerScreenEventHandlers(PlayerScreen screen)
         {
             screen.OpenVideoAsked += Player_OpenVideoAsked;
+            screen.VideoPathLoadAsked += Player_VideoPathLoadAsked;
             screen.OpenReplayWatcherAsked += Player_OpenReplayWatcherAsked;
             screen.OpenAnnotationsAsked += Player_OpenAnnotationsAsked;
             screen.SelectionChanged += Player_SelectionChanged;
@@ -2682,6 +3086,7 @@ namespace Kinovea.ScreenManager
         private void RemovePlayerScreenEventHandlers(PlayerScreen screen)
         {
             screen.OpenVideoAsked -= Player_OpenVideoAsked;
+            screen.VideoPathLoadAsked -= Player_VideoPathLoadAsked;
             screen.OpenReplayWatcherAsked -= Player_OpenReplayWatcherAsked;
             screen.OpenAnnotationsAsked -= Player_OpenAnnotationsAsked;
             screen.SelectionChanged -= Player_SelectionChanged;

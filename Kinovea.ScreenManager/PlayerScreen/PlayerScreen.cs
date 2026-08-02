@@ -51,6 +51,7 @@ namespace Kinovea.ScreenManager
         public event EventHandler ResetAsked;
         public event EventHandler<EventArgs<int>> SyncMergeSourceWheelAsked;
         public event EventHandler<System.ComponentModel.HandledEventArgs> SyncMergeSourceSoloAsked;
+        public event EventHandler<EventArgs<string>> VideoPathLoadAsked;
         #endregion
 
         #region Properties
@@ -413,6 +414,7 @@ namespace Kinovea.ScreenManager
             view.ResetAsked += View_ResetAsked;
             view.SyncMergeSourceWheelAsked += View_SyncMergeSourceWheelAsked;
             view.SyncMergeSourceSoloAsked += View_SyncMergeSourceSoloAsked;
+            view.VideoPathLoadAsked += View_VideoPathLoadAsked;
 
             // Requests for metadata modification coming from the view, these should push a memento on the history stack.
             view.KeyframeAdding += View_KeyframeAdding;
@@ -543,6 +545,12 @@ namespace Kinovea.ScreenManager
         {
             if (SyncMergeSourceSoloAsked != null)
                 SyncMergeSourceSoloAsked(this, e);
+        }
+
+        private void View_VideoPathLoadAsked(object sender, EventArgs<string> e)
+        {
+            if (VideoPathLoadAsked != null)
+                VideoPathLoadAsked(this, e);
         }
         #endregion
 
@@ -696,6 +704,9 @@ namespace Kinovea.ScreenManager
             
             sd.SpeedPercentage = RealtimePercentage;
             sd.Stretch = view.ImageFill;
+            sd.Brightness = BrightnessAdjustment;
+            sd.Contrast = ContrastAdjustment;
+            sd.ColorTemperature = ColorTemperatureAdjustment;
             return sd;
         }
 

@@ -348,6 +348,8 @@
    <data name="mnuFourPlayers" xml:space="preserve"><value>Four playback screens (2×2)</value></data>
    <data name="mnuFourPlayersRow" xml:space="preserve"><value>Four playback screens (1×4)</value></data>
    <data name="mnuInsertScreenRight" xml:space="preserve"><value>Insert screen to the right of active</value></data>
+   <data name="mnuRestorePeakScreens" xml:space="preserve"><value>Restore maximum screens from this session</value></data>
+   <data name="mnuRestoreLastClosedScreen" xml:space="preserve"><value>Restore last closed screen</value></data>
    <data name="mnuConfigureScreens" xml:space="preserve"><value>Configure screen layout…</value></data>
    <data name="ImageAdjustments_Title" xml:space="preserve"><value>Tone</value></data>
    <data name="ImageAdjustments_Brightness_Short" xml:space="preserve"><value>B</value></data>
@@ -355,6 +357,15 @@
    <data name="ImageAdjustments_ColorTemperature_Short" xml:space="preserve"><value>T</value></data>
    <data name="ImageAdjustments_Reset" xml:space="preserve"><value>Reset image adjustments</value></data>
    <data name="ImageAdjustments_Reset_Short" xml:space="preserve"><value>R</value></data>
+   <data name="FileSearch_Title" xml:space="preserve"><value>Find video</value></data>
+   <data name="FileSearch_Open" xml:space="preserve"><value>Open</value></data>
+   <data name="FileSearch_Searching" xml:space="preserve"><value>…</value></data>
+   <data name="FileSearch_OpenTooltip" xml:space="preserve"><value>Open path or search by keyword</value></data>
+   <data name="FileSearch_HistoryTooltip" xml:space="preserve"><value>Show search history (resizable)</value></data>
+   <data name="FileSearch_Placeholder" xml:space="preserve"><value>Path or keyword…</value></data>
+   <data name="FileSearch_PathNotFound" xml:space="preserve"><value>File not found:\n{0}</value></data>
+   <data name="FileSearch_NoResults" xml:space="preserve"><value>No videos matched “{0}” in recent folders, shortcuts, or a background fixed-drive scan.</value></data>
+   <data name="FileSearch_ResultsTitle" xml:space="preserve"><value>Results for “{0}”</value></data>
    <data name="ScreenLayout_Title" xml:space="preserve"><value>Configure screen layout</value></data>
    <data name="ScreenLayout_Count" xml:space="preserve"><value>Number of screens:</value></data>
    <data name="ScreenLayout_Screen" xml:space="preserve"><value>Screen {0}:</value></data>

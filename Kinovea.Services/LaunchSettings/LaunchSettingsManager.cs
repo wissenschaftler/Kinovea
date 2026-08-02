@@ -36,13 +36,31 @@ namespace Kinovea.Services
 
         public static string Name { get; set; }
 
+        /// <summary>
+        /// Optional layout columns from workspace. 0 = unspecified.
+        /// </summary>
+        public static int LayoutColumns { get; set; }
+
+        /// <summary>
+        /// Optional layout rows from workspace. 0 = unspecified.
+        /// </summary>
+        public static int LayoutRows { get; set; }
+
         public static void ClearScreenDescriptions()
         {
             ScreenDescriptions.Clear();
+            LayoutColumns = 0;
+            LayoutRows = 0;
         }
         public static void AddScreenDescription(IScreenDescription screenDescription)
         {
             ScreenDescriptions.Add(screenDescription);
+        }
+
+        public static void SetLayout(int columns, int rows)
+        {
+            LayoutColumns = Math.Max(0, columns);
+            LayoutRows = Math.Max(0, rows);
         }
     }
 }

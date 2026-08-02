@@ -61,7 +61,22 @@ namespace Kinovea.Services
         /// <summary>
         /// Whether this screen is monitoring new files and loading them automatically.
         /// </summary>
-        public bool IsReplayWatcher { get; set; } 
+        public bool IsReplayWatcher { get; set; }
+
+        /// <summary>
+        /// Brightness adjustment in [-100, 100]. Default 0.
+        /// </summary>
+        public int Brightness { get; set; }
+
+        /// <summary>
+        /// Contrast adjustment in [-100, 100]. Default 0.
+        /// </summary>
+        public int Contrast { get; set; }
+
+        /// <summary>
+        /// Color temperature adjustment in [-100, 100]. Default 0.
+        /// </summary>
+        public int ColorTemperature { get; set; }
 
         
         public DateTime RecoveryLastSave { get; set; }
@@ -74,6 +89,9 @@ namespace Kinovea.Services
             SpeedPercentage = 100;
             Stretch = false;
             IsReplayWatcher = false;
+            Brightness = 0;
+            Contrast = 0;
+            ColorTemperature = 0;
             RecoveryLastSave = DateTime.MinValue;
         }
 
@@ -103,6 +121,15 @@ namespace Kinovea.Services
                     case "IsReplayWatcher":
                         IsReplayWatcher = XmlHelper.ParseBoolean(reader.ReadElementContentAsString());
                         break;
+                    case "Brightness":
+                        Brightness = ClampAdjustment(reader.ReadElementContentAsInt());
+                        break;
+                    case "Contrast":
+                        Contrast = ClampAdjustment(reader.ReadElementContentAsInt());
+                        break;
+                    case "ColorTemperature":
+                        ColorTemperature = ClampAdjustment(reader.ReadElementContentAsInt());
+                        break;
                     default:
                         reader.ReadOuterXml();
                         break;
@@ -119,6 +146,14 @@ namespace Kinovea.Services
             w.WriteElementString("SpeedPercentage", XmlHelper.WriteFloat((float)SpeedPercentage));
             w.WriteElementString("Stretch", XmlHelper.WriteBoolean(Stretch));
             w.WriteElementString("IsReplayWatcher", XmlHelper.WriteBoolean(IsReplayWatcher));
+            w.WriteElementString("Brightness", Brightness.ToString(CultureInfo.InvariantCulture));
+            w.WriteElementString("Contrast", Contrast.ToString(CultureInfo.InvariantCulture));
+            w.WriteElementString("ColorTemperature", ColorTemperature.ToString(CultureInfo.InvariantCulture));
+        }
+
+        private static int ClampAdjustment(int value)
+        {
+            return Math.Max(-100, Math.Min(100, value));
         }
     }
 }

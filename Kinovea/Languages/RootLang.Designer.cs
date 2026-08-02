@@ -1267,6 +1267,15 @@ namespace Kinovea.Root.Languages {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Open workspace….
+        /// </summary>
+        public static string mnuWorkspaceOpen {
+            get {
+                return ResourceManager.GetString("mnuWorkspaceOpen", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Export workspace.
         /// </summary>
         public static string mnuWorkspaceExport {

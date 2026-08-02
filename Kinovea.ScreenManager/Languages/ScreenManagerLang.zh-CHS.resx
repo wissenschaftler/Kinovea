@@ -270,6 +270,10 @@
   </data>
   <data name="mnuInsertScreenRight" xml:space="preserve"><value>在活动屏右侧插入屏幕</value>
   </data>
+  <data name="mnuRestorePeakScreens" xml:space="preserve"><value>恢复本会话最多屏状态</value>
+  </data>
+  <data name="mnuRestoreLastClosedScreen" xml:space="preserve"><value>恢复刚刚关闭的屏幕</value>
+  </data>
   <data name="mnuConfigureScreens" xml:space="preserve"><value>配置屏幕布局…</value>
   </data>
   <data name="ImageAdjustments_Title" xml:space="preserve"><value>色调</value>
@@ -283,6 +287,24 @@
   <data name="ImageAdjustments_Reset" xml:space="preserve"><value>重置图像调整</value>
   </data>
   <data name="ImageAdjustments_Reset_Short" xml:space="preserve"><value>复</value>
+  </data>
+  <data name="FileSearch_Title" xml:space="preserve"><value>查找视频</value>
+  </data>
+  <data name="FileSearch_Open" xml:space="preserve"><value>打开</value>
+  </data>
+  <data name="FileSearch_Searching" xml:space="preserve"><value>搜…</value>
+  </data>
+  <data name="FileSearch_OpenTooltip" xml:space="preserve"><value>打开路径或按关键字搜索</value>
+  </data>
+  <data name="FileSearch_HistoryTooltip" xml:space="preserve"><value>显示搜索历史（可调整大小）</value>
+  </data>
+  <data name="FileSearch_Placeholder" xml:space="preserve"><value>路径或关键字…</value>
+  </data>
+  <data name="FileSearch_PathNotFound" xml:space="preserve"><value>找不到文件：\n{0}</value>
+  </data>
+  <data name="FileSearch_NoResults" xml:space="preserve"><value>在最近文件夹、常用目录及本机固定盘后台扫描中，均未找到匹配“{0}”的视频。</value>
+  </data>
+  <data name="FileSearch_ResultsTitle" xml:space="preserve"><value>“{0}”的搜索结果</value>
   </data>
   <data name="ScreenLayout_Title" xml:space="preserve"><value>配置屏幕布局</value>
   </data>

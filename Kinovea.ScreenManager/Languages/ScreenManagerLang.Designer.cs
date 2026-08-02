@@ -3136,6 +3136,14 @@ namespace Kinovea.ScreenManager.Languages {
             get { return ResourceManager.GetString("mnuInsertScreenRight", resourceCulture); }
         }
 
+        public static string mnuRestorePeakScreens {
+            get { return ResourceManager.GetString("mnuRestorePeakScreens", resourceCulture); }
+        }
+
+        public static string mnuRestoreLastClosedScreen {
+            get { return ResourceManager.GetString("mnuRestoreLastClosedScreen", resourceCulture); }
+        }
+
         public static string mnuConfigureScreens {
             get { return ResourceManager.GetString("mnuConfigureScreens", resourceCulture); }
         }
@@ -3162,6 +3170,42 @@ namespace Kinovea.ScreenManager.Languages {
 
         public static string ImageAdjustments_Reset_Short {
             get { return ResourceManager.GetString("ImageAdjustments_Reset_Short", resourceCulture); }
+        }
+
+        public static string FileSearch_Title {
+            get { return ResourceManager.GetString("FileSearch_Title", resourceCulture); }
+        }
+
+        public static string FileSearch_Open {
+            get { return ResourceManager.GetString("FileSearch_Open", resourceCulture); }
+        }
+
+        public static string FileSearch_Searching {
+            get { return ResourceManager.GetString("FileSearch_Searching", resourceCulture); }
+        }
+
+        public static string FileSearch_OpenTooltip {
+            get { return ResourceManager.GetString("FileSearch_OpenTooltip", resourceCulture); }
+        }
+
+        public static string FileSearch_HistoryTooltip {
+            get { return ResourceManager.GetString("FileSearch_HistoryTooltip", resourceCulture); }
+        }
+
+        public static string FileSearch_Placeholder {
+            get { return ResourceManager.GetString("FileSearch_Placeholder", resourceCulture); }
+        }
+
+        public static string FileSearch_PathNotFound {
+            get { return ResourceManager.GetString("FileSearch_PathNotFound", resourceCulture); }
+        }
+
+        public static string FileSearch_NoResults {
+            get { return ResourceManager.GetString("FileSearch_NoResults", resourceCulture); }
+        }
+
+        public static string FileSearch_ResultsTitle {
+            get { return ResourceManager.GetString("FileSearch_ResultsTitle", resourceCulture); }
         }
 
         public static string ScreenLayout_Title {

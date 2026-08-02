@@ -80,6 +80,7 @@ namespace Kinovea.ScreenManager
         public event EventHandler ImageAdjustmentsChanged;
         public event EventHandler<EventArgs<int>> SyncMergeSourceWheelAsked;
         public event EventHandler<System.ComponentModel.HandledEventArgs> SyncMergeSourceSoloAsked;
+        public event EventHandler<EventArgs<string>> VideoPathLoadAsked;
         #endregion
 
         #region Commands encapsulating domain logic implemented in the presenter.
@@ -335,6 +336,13 @@ namespace Kinovea.ScreenManager
         private Label lblContrastValue = new Label();
         private Label lblColorTemperatureValue = new Label();
         private Button btnResetImageAdjustments = new Button();
+        private Panel panelFileSearch = new Panel();
+        private ComboBox cmbFileSearch = new ComboBox();
+        private Button btnFileSearchOpen = new Button();
+        private Button btnFileSearchHistory = new Button();
+        private FileSearchDropDown fileSearchDropDown = new FileSearchDropDown();
+        private bool m_FileSearchInProgress;
+        private string m_FileSearchOpenButtonText;
 
         // Selection and current position. All values in absolute timestamps.
         // trkSelection.minimum and maximum are also in absolute timestamps.
@@ -451,6 +459,7 @@ namespace Kinovea.ScreenManager
 
             InitializeComponent();
             InitializeInfobar();
+            InitializeFileSearchControls();
             InitializeDrawingTools(drawingToolbarPresenter);
             InitializeImageAdjustmentsControls();
             BuildContextMenus();
@@ -630,6 +639,13 @@ namespace Kinovea.ScreenManager
                     m_fill = true;
                     ResizeUpdate(true);
                 }
+
+                SetImageAdjustments(
+                    m_LaunchDescription.Brightness,
+                    m_LaunchDescription.Contrast,
+                    m_LaunchDescription.ColorTemperature,
+                    true);
+                OnImageAdjustmentsChanged();
             }
 
             if (!recoveredMetadata)
@@ -892,6 +908,7 @@ namespace Kinovea.ScreenManager
 
             RepositionSpeedControl();
             RefreshImageAdjustmentsCulture();
+            RefreshFileSearchCulture();
             ReloadTooltipsCulture();
             ReloadToolsCulture();
             ReloadMenusCulture();
@@ -2873,6 +2890,224 @@ namespace Kinovea.ScreenManager
             m_btnShowComments.ToolTipText = ScreenManagerLang.ToolTip_ShowComments;
             m_btnToolPresets.ToolTipText = ScreenManagerLang.ToolTip_ColorProfile;
         }
+        private void InitializeFileSearchControls()
+        {
+            panelFileSearch.Dock = DockStyle.Top;
+            panelFileSearch.Height = 26;
+            panelFileSearch.BackColor = Color.White;
+            panelFileSearch.Padding = new Padding(4, 2, 4, 2);
+
+            btnFileSearchOpen.FlatStyle = FlatStyle.Flat;
+            btnFileSearchOpen.FlatAppearance.BorderSize = 0;
+            btnFileSearchOpen.BackColor = Color.WhiteSmoke;
+            btnFileSearchOpen.Dock = DockStyle.Right;
+            btnFileSearchOpen.Width = 42;
+            btnFileSearchOpen.Cursor = Cursors.Hand;
+            btnFileSearchOpen.Click += btnFileSearchOpen_Click;
+
+            btnFileSearchHistory.FlatStyle = FlatStyle.Flat;
+            btnFileSearchHistory.FlatAppearance.BorderSize = 0;
+            btnFileSearchHistory.BackColor = Color.WhiteSmoke;
+            btnFileSearchHistory.Dock = DockStyle.Right;
+            btnFileSearchHistory.Width = 22;
+            btnFileSearchHistory.Cursor = Cursors.Hand;
+            btnFileSearchHistory.Text = "▾";
+            btnFileSearchHistory.Click += btnFileSearchHistory_Click;
+
+            cmbFileSearch.Dock = DockStyle.Fill;
+            cmbFileSearch.FlatStyle = FlatStyle.Flat;
+            cmbFileSearch.DropDownStyle = ComboBoxStyle.DropDown;
+            cmbFileSearch.IntegralHeight = false;
+            cmbFileSearch.DropDownHeight = 1;
+            cmbFileSearch.DropDown += cmbFileSearch_DropDown;
+            cmbFileSearch.KeyDown += cmbFileSearch_KeyDown;
+
+            fileSearchDropDown.ItemChosen += fileSearchDropDown_ItemChosen;
+
+            // Dock order: Fill first, then Right controls (history then open) so Fill gets remaining space.
+            panelFileSearch.Controls.Add(cmbFileSearch);
+            panelFileSearch.Controls.Add(btnFileSearchHistory);
+            panelFileSearch.Controls.Add(btnFileSearchOpen);
+            this.Controls.Add(panelFileSearch);
+
+            RefreshFileSearchCulture();
+        }
+
+        private void RefreshFileSearchCulture()
+        {
+            m_FileSearchOpenButtonText = ScreenManagerLang.FileSearch_Open;
+            if (!m_FileSearchInProgress)
+                btnFileSearchOpen.Text = m_FileSearchOpenButtonText;
+            toolTips.SetToolTip(btnFileSearchOpen, ScreenManagerLang.FileSearch_OpenTooltip);
+            toolTips.SetToolTip(btnFileSearchHistory, ScreenManagerLang.FileSearch_HistoryTooltip);
+            toolTips.SetToolTip(cmbFileSearch, ScreenManagerLang.FileSearch_Placeholder);
+        }
+
+        private void cmbFileSearch_DropDown(object sender, EventArgs e)
+        {
+            // Replace the native ComboBox list with a resizable popup that can show full paths.
+            BeginInvoke(new Action(() =>
+            {
+                cmbFileSearch.DroppedDown = false;
+                ShowFileSearchHistory();
+            }));
+        }
+
+        private void btnFileSearchHistory_Click(object sender, EventArgs e)
+        {
+            ShowFileSearchHistory();
+        }
+
+        private void ShowFileSearchHistory()
+        {
+            fileSearchDropDown.ShowSuggestions(cmbFileSearch, FileSearchHelper.GetDropdownSuggestions(), cmbFileSearch.Text);
+        }
+
+        private void fileSearchDropDown_ItemChosen(object sender, EventArgs<string> e)
+        {
+            if (e == null || string.IsNullOrEmpty(e.Value))
+                return;
+
+            cmbFileSearch.Text = e.Value;
+            TryOpenFromFileSearch();
+        }
+
+        private void cmbFileSearch_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                TryOpenFromFileSearch();
+            }
+            else if (e.KeyCode == Keys.Down && !fileSearchDropDown.Visible)
+            {
+                e.Handled = true;
+                ShowFileSearchHistory();
+            }
+        }
+
+        private void btnFileSearchOpen_Click(object sender, EventArgs e)
+        {
+            TryOpenFromFileSearch();
+        }
+
+        private void TryOpenFromFileSearch()
+        {
+            if (m_FileSearchInProgress)
+                return;
+
+            string input = cmbFileSearch.Text;
+            if (string.IsNullOrWhiteSpace(input))
+                return;
+
+            SetFileSearchBusy(true);
+            ThreadPool.QueueUserWorkItem(state =>
+            {
+                FileSearchResult result = null;
+                Exception error = null;
+                try
+                {
+                    result = FileSearchHelper.Resolve(input);
+                }
+                catch (Exception e)
+                {
+                    error = e;
+                }
+
+                if (IsDisposed || !IsHandleCreated)
+                    return;
+
+                BeginInvoke(new Action(() => FinishFileSearch(input, result, error)));
+            });
+        }
+
+        private void SetFileSearchBusy(bool busy)
+        {
+            m_FileSearchInProgress = busy;
+            cmbFileSearch.Enabled = !busy;
+            btnFileSearchHistory.Enabled = !busy;
+            btnFileSearchOpen.Enabled = !busy;
+            if (busy)
+            {
+                UseWaitCursor = true;
+                btnFileSearchOpen.Text = ScreenManagerLang.FileSearch_Searching;
+            }
+            else
+            {
+                UseWaitCursor = false;
+                btnFileSearchOpen.Text = string.IsNullOrEmpty(m_FileSearchOpenButtonText)
+                    ? ScreenManagerLang.FileSearch_Open
+                    : m_FileSearchOpenButtonText;
+            }
+        }
+
+        private void FinishFileSearch(string input, FileSearchResult result, Exception error)
+        {
+            SetFileSearchBusy(false);
+
+            if (error != null)
+            {
+                MessageBox.Show(
+                    error.Message,
+                    ScreenManagerLang.FileSearch_Title,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (result == null)
+                return;
+
+            if (!string.IsNullOrEmpty(result.ExactPath))
+            {
+                OpenResolvedVideoPath(result.ExactPath, input);
+                return;
+            }
+
+            if (result.PathNotFound)
+            {
+                MessageBox.Show(
+                    string.Format(ScreenManagerLang.FileSearch_PathNotFound, result.Query).Replace("\\n", "\n"),
+                    ScreenManagerLang.FileSearch_Title,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            if (result.Matches == null || result.Matches.Count == 0)
+            {
+                MessageBox.Show(
+                    string.Format(ScreenManagerLang.FileSearch_NoResults, result.Query ?? input),
+                    ScreenManagerLang.FileSearch_Title,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                FileSearchHelper.RememberSearch(input);
+                return;
+            }
+
+            if (result.Matches.Count == 1)
+            {
+                OpenResolvedVideoPath(result.Matches[0], input);
+                return;
+            }
+
+            using (FormFileSearchResults form = new FormFileSearchResults(result.Query, result.Matches))
+            {
+                if (form.ShowDialog(this) == DialogResult.OK && !string.IsNullOrEmpty(form.SelectedPath))
+                    OpenResolvedVideoPath(form.SelectedPath, input);
+            }
+        }
+
+        private void OpenResolvedVideoPath(string path, string rememberedInput)
+        {
+            FileSearchHelper.RememberSearch(rememberedInput);
+            FileSearchHelper.RememberSearch(path);
+            cmbFileSearch.Text = path;
+            if (VideoPathLoadAsked != null)
+                VideoPathLoadAsked(this, new EventArgs<string>(path));
+        }
+
         private void InitializeImageAdjustmentsControls()
         {
             panelVideoControls.MinimumSize = new Size(panelVideoControls.MinimumSize.Width, 126);
@@ -2900,8 +3135,9 @@ namespace Kinovea.ScreenManager
             btnResetImageAdjustments.FlatStyle = FlatStyle.Flat;
             btnResetImageAdjustments.FlatAppearance.BorderSize = 0;
             btnResetImageAdjustments.BackColor = Color.WhiteSmoke;
-            btnResetImageAdjustments.Location = new Point(398, 4);
-            btnResetImageAdjustments.Size = new Size(18, 20);
+            // Sit to the right of the color-temperature value label (they previously shared X=398).
+            btnResetImageAdjustments.Location = new Point(424, 4);
+            btnResetImageAdjustments.Size = new Size(22, 20);
             btnResetImageAdjustments.Click += btnResetImageAdjustments_Click;
 
             sldrBrightness.ValueChanged += sldrImageAdjustment_ValueChanged;

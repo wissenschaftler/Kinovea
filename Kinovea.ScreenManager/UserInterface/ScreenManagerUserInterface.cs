@@ -122,11 +122,17 @@ namespace Kinovea.ScreenManager
 
         public void OrganizeScreens(List<AbstractScreen> screenList, int columns, int rows)
         {
-            if(screenList.Count == 0)
+            OrganizeScreens(screenList, columns, rows, false);
+        }
+
+        public void OrganizeScreens(List<AbstractScreen> screenList, int columns, int rows, bool screensSuspended)
+        {
+            if (screenList.Count == 0 || screensSuspended)
             {
                 pnlScreens.Visible = false;
                 this.AllowDrop = true;
-                ClearScreenCells(true);
+                if (screenList.Count == 0)
+                    ClearScreenCells(true);
 
                 if (!Closing)
                     thumbnailViewerContainer.Unhide();

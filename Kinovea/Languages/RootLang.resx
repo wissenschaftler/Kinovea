@@ -201,6 +201,7 @@
    <data name="mnuOptions" xml:space="preserve"><value>Options</value></data>
    <data name="mnuPreferences" xml:space="preserve"><value>Preferences…</value></data>
    <data name="mnuWorkspace" xml:space="preserve"><value>Workspace</value></data>
+   <data name="mnuWorkspaceOpen" xml:space="preserve"><value>Open workspace…</value></data>
    <data name="mnuWorkspaceSaveAsDefault" xml:space="preserve"><value>Save as default workspace</value></data>
    <data name="mnuWorkspaceExport" xml:space="preserve"><value>Export workspace</value></data>
    <data name="mnuScreens" xml:space="preserve"><value>View</value></data>

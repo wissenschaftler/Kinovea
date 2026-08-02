@@ -87,6 +87,7 @@ namespace Kinovea.Root
         private ToolStripMenuItem mnuTimecodeTimeAndFrames = new ToolStripMenuItem();
         private ToolStripMenuItem mnuTimecodeNormalized = new ToolStripMenuItem();
         private ToolStripMenuItem mnuWorkspace = new ToolStripMenuItem();
+        private ToolStripMenuItem mnuWorkspaceOpen = new ToolStripMenuItem();
         private ToolStripMenuItem mnuWorkspaceSaveAsDefault = new ToolStripMenuItem();
         private ToolStripMenuItem mnuWorkspaceExport = new ToolStripMenuItem();
         private ToolStripMenuItem mnuHelp = new ToolStripMenuItem();
@@ -339,9 +340,10 @@ namespace Kinovea.Root
 
             mnuTimecode.DropDownItems.AddRange(new ToolStripItem[] { mnuTimecodeClassic, mnuTimecodeFrames, mnuTimecodeMilliseconds, mnuTimecodeMicroseconds, mnuTimecodeTimeAndFrames});
 
+            mnuWorkspaceOpen.Click += MnuWorkspaceOpen_Click;
             mnuWorkspaceSaveAsDefault.Click += MnuWorkspaceSaveAsDefault_Click;
             mnuWorkspaceExport.Click += MnuWorkspaceExport_Click;
-            mnuWorkspace.DropDownItems.AddRange(new ToolStripItem[] { mnuWorkspaceSaveAsDefault, mnuWorkspaceExport });
+            mnuWorkspace.DropDownItems.AddRange(new ToolStripItem[] { mnuWorkspaceOpen, mnuWorkspaceSaveAsDefault, mnuWorkspaceExport });
 
             mnuOptions.DropDownItems.AddRange(new ToolStripItem[] { 
                 mnuLanguages, 
@@ -446,6 +448,8 @@ namespace Kinovea.Root
 
             mnuWorkspace.Text = RootLang.mnuWorkspace;
             mnuWorkspace.Image = Properties.Resources.common_controls;
+            mnuWorkspaceOpen.Text = RootLang.mnuWorkspaceOpen;
+            mnuWorkspaceOpen.Image = Properties.Resources.folder;
             mnuWorkspaceSaveAsDefault.Text = RootLang.mnuWorkspaceSaveAsDefault;
             mnuWorkspaceSaveAsDefault.Image = Properties.Resources.disk;
             mnuWorkspaceExport.Text = RootLang.mnuWorkspaceExport;
@@ -631,6 +635,32 @@ namespace Kinovea.Root
             PreferencesManager.PlayerPreferences.TimecodeFormat = _timecode;
             RefreshUICulture();
             PreferencesManager.Save();
+        }
+
+        private void MnuWorkspaceOpen_Click(object sender, EventArgs e)
+        {
+            OpenFileDialog openFileDialog = new OpenFileDialog();
+            openFileDialog.RestoreDirectory = true;
+            openFileDialog.Filter = FilesystemHelper.SaveWorkspaceFilter();
+            openFileDialog.FilterIndex = 1;
+            if (openFileDialog.ShowDialog() != DialogResult.OK || string.IsNullOrEmpty(openFileDialog.FileName))
+                return;
+
+            Workspace workspace = new Workspace();
+            if (!workspace.Load(openFileDialog.FileName))
+            {
+                MessageBox.Show("The workspace file could not be loaded.", "Workspace", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            if (workspace.Screens == null || workspace.Screens.Count == 0)
+            {
+                MessageBox.Show("The workspace file does not contain any screens.", "Workspace", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            NotificationCenter.RaiseStopPlayback(this);
+            screenManager.LoadWorkspace(workspace);
         }
 
         private void MnuWorkspaceSaveAsDefault_Click(object sender, EventArgs e)
