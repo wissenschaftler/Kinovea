@@ -784,18 +784,31 @@ namespace Kinovea.ScreenManager
         public bool CloseSubModules()
         {
             view.Closing = true;
-            for(int i = screenList.Count - 1; i >= 0; i--)
+
+            // Confirm dirty annotations once up front; then tear down without per-screen
+            // CloseFile → OrganizeScreens (which made remaining screens relayout N times).
+            for (int i = 0; i < screenList.Count; i++)
             {
-                screenList[i].BeforeClose();
-                CloseFile(i);
-                AfterSharedBufferChange();
+                if (!(screenList[i] is PlayerScreen))
+                    continue;
+
+                if (!BeforeReplacingPlayerContent(i))
+                {
+                    view.Closing = false;
+                    return true;
+                }
             }
 
-            bool cancelled = screenList.Count > 0;
-            if (cancelled)
-                view.Closing = false;
+            while (screenList.Count > 0)
+            {
+                AbstractScreen screen = screenList[screenList.Count - 1];
+                RemoveScreen(screen);
+            }
 
-            return cancelled;
+            closedScreensStack.Clear();
+            // One visual teardown (Closing short-circuits intermediate rebuilds).
+            view.OrganizeScreens(screenList, layoutColumns, layoutRows, false);
+            return false;
         }
         public void PreferencesUpdated()
         {
@@ -906,7 +919,8 @@ namespace Kinovea.ScreenManager
         }
         private void Player_SelectionChanged(object sender, EventArgs<bool> e)
         {
-            ResetSync();
+            // Soft sync: keep other screens on their current frames after load / working-zone init.
+            ResetSync(true);
 
             dualLaunchSettingsPendingCountdown--;
 
@@ -915,9 +929,9 @@ namespace Kinovea.ScreenManager
         }
         private void Player_ResetAsked(object sender, EventArgs e)
         {
-            // A screen was reset. (ex: a video was reloded in place).
-            // We need to also reset all the sync states.
-            ResetSync();
+            // A screen was reset (ex: a video was reloaded in place).
+            // Soft rebind so other Full players are not seeked back to 0.
+            ResetSync(true);
         }
         private void Capture_CameraDiscoveryComplete(object sender, EventArgs<string> e)
         {
@@ -1050,6 +1064,9 @@ namespace Kinovea.ScreenManager
 
         public void OrganizeScreens()
         {
+            if (view.Closing)
+                return;
+
             SyncLayoutGridToScreenCount();
             view.OrganizeScreens(screenList, layoutColumns, layoutRows, screensSuspended);
             UpdateStatusBar();
@@ -2551,15 +2568,31 @@ namespace Kinovea.ScreenManager
 
         private void MaybeUpdatePeakSnapshot()
         {
-            if (screenList.Count <= peakScreenCount)
+            int count = screenList.Count;
+            if (count == 0)
                 return;
 
-            peakScreenCount = screenList.Count;
+            // Below the recorded peak: keep the peak snapshot so "restore max screens" still works.
+            // At or above peak: capture current layout/content (so videos opened after inserting
+            // a screen are included, not only the empty state at first peak).
+            if (count < peakScreenCount)
+                return;
+
+            peakScreenCount = count;
             if (peakScreenSnapshot != null)
                 peakScreenSnapshot.ClearAnnotationFiles();
 
             peakScreenSnapshot = CaptureSessionSnapshot("session-peak");
             OrganizeMenus();
+        }
+
+        /// <summary>
+        /// Refresh the peak-session snapshot when the current layout is at the session max screen count.
+        /// Call after loading content into a screen so restore reflects the latest files, not only the insert moment.
+        /// </summary>
+        public void RefreshPeakSnapshotIfAtPeak()
+        {
+            MaybeUpdatePeakSnapshot();
         }
 
         private SessionScreenSnapshot CaptureSessionSnapshot(string cacheSubFolder)
@@ -2951,11 +2984,16 @@ namespace Kinovea.ScreenManager
         /// </summary>
         private void ResetSync()
         {
+            ResetSync(false);
+        }
+
+        private void ResetSync(bool preservePositions)
+        {
             foreach (PlayerScreen p in playerScreens)
                 p.Synched = false;
 
             if (view.CommonControlsVisible)
-                dualPlayer.ResetSync();
+                dualPlayer.ResetSync(preservePositions);
         }
         public void AddPlayerScreen()
         {

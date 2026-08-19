@@ -1,6 +1,6 @@
 #region License
 /*
-Copyright © Joan Charmant 2011.
+Copyright ù Joan Charmant 2011.
 jcharmant@gmail.com 
  
 This file is part of Kinovea.
@@ -105,7 +105,7 @@ namespace Kinovea.Root
             lblHistoryCount.Text = RootLang.dlgPreferences_General_lblHistoryCount;
 
             SelectCurrentLanguage();
-            cmbHistoryCount.SelectedIndex = maxRecentFiles;
+            SelectHistoryCount(maxRecentFiles);
 
             chkAllowMultipleInstances.Text = RootLang.dlgPreferences_General_chkAllowMultipleInstances;
             chkAllowMultipleInstances.Checked = allowMultipleInstances;
@@ -141,6 +141,32 @@ namespace Kinovea.Root
             if(!found)
                 cmbLanguage.SelectedIndex = 0;   
         }
+        private void SelectHistoryCount(int count)
+        {
+            string text = count.ToString();
+            for (int i = 0; i < cmbHistoryCount.Items.Count; i++)
+            {
+                if (string.Equals(cmbHistoryCount.Items[i].ToString(), text, StringComparison.Ordinal))
+                {
+                    cmbHistoryCount.SelectedIndex = i;
+                    return;
+                }
+            }
+
+            // Prefer nearest option at or below the stored value; fall back to max (1000).
+            int bestIndex = cmbHistoryCount.Items.Count - 1;
+            for (int i = 0; i < cmbHistoryCount.Items.Count; i++)
+            {
+                int option;
+                if (!int.TryParse(cmbHistoryCount.Items[i].ToString(), out option))
+                    continue;
+                if (option <= count)
+                    bestIndex = i;
+                else
+                    break;
+            }
+            cmbHistoryCount.SelectedIndex = bestIndex;
+        }
         #endregion
         
         #region Handlers
@@ -150,7 +176,10 @@ namespace Kinovea.Root
         }
         private void cmbHistoryCount_SelectedIndexChanged(object sender, EventArgs e)
         {
-            maxRecentFiles = cmbHistoryCount.SelectedIndex;
+            int parsed;
+            if (cmbHistoryCount.SelectedItem != null &&
+                int.TryParse(cmbHistoryCount.SelectedItem.ToString(), out parsed))
+                maxRecentFiles = parsed;
         }
         private void chkAllowMultipleInstances_CheckedChanged(object sender, EventArgs e)
         {

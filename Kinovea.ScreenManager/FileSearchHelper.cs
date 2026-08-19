@@ -16,8 +16,8 @@ namespace Kinovea.ScreenManager
     public static class FileSearchHelper
     {
         public const int MaxResults = 50;
-        public const int MaxSearchHistory = 15;
-        public const int MaxRecentFolders = 50;
+        public const int MaxSearchHistory = 1000;
+        public const int MaxRecentFolders = 1000;
 
         private static readonly List<string> searchHistory = new List<string>();
         private static readonly object historyLock = new object();

@@ -107,6 +107,23 @@ namespace Kinovea.ScreenManager
             layoutColumns = columns;
             layoutRows = rows;
             playerSlotIndices = slotIndices;
+
+            // Same player instances already managed: skip Exit/Enter teardown (avoids flicker on load-in-place).
+            if (active && playerScreens.Count >= 2 && players.Count == playerScreens.Count)
+            {
+                bool same = true;
+                for (int i = 0; i < players.Count; i++)
+                {
+                    if (!object.ReferenceEquals(players[i], playerScreens[i]))
+                    {
+                        same = false;
+                        break;
+                    }
+                }
+                if (same)
+                    return;
+            }
+
             if (playerScreens.Count >= 2)
                 Enter(playerScreens);
             else
@@ -889,6 +906,16 @@ namespace Kinovea.ScreenManager
         #region Synchronization
         public void ResetSync()
         {
+            ResetSync(false);
+        }
+
+        /// <summary>
+        /// Rebuild dual-player sync.
+        /// When preservePositions is true (e.g. after loading a video on one screen), keep each
+        /// player's current frame and only rebind the common timeline — avoid seeking everyone to 0.
+        /// </summary>
+        public void ResetSync(bool preservePositions)
+        {
             if (!active)
                 return;
 
@@ -911,16 +938,24 @@ namespace Kinovea.ScreenManager
                     player.RealtimePercentage = percentage;
             }
 
-            InitializeSync();
+            InitializeSync(preservePositions);
 
             foreach (PlayerScreen player in players)
                 player.SyncMerge = false;
             StopMerge();
 
-            GotoTime(currentTime, true);
+            if (!preservePositions)
+                GotoTime(currentTime, true);
+            else
+                UpdateHairLines();
         }
 
         private void InitializeSync()
+        {
+            InitializeSync(false);
+        }
+
+        private void InitializeSync(bool preservePositions)
         {
             if (playablePlayers.Count < 2)
                 return;
@@ -928,12 +963,17 @@ namespace Kinovea.ScreenManager
             PlayerScreen effectiveReference = this.referencePlayer != null && playablePlayers.Contains(this.referencePlayer) ?
                 this.referencePlayer : playablePlayers.First();
             commonTimeline.Initialize(playablePlayers, effectiveReference);
-            currentTime = 0;
+
+            if (preservePositions)
+                currentTime = commonTimeline.GetCommonTime(effectiveReference, effectiveReference.LocalTime);
+            else
+                currentTime = 0;
+
             view.SetupTrkFrame(0, commonTimeline.LastTime, currentTime);
             view.UpdateSyncPosition(commonTimeline.GetCommonTime(effectiveReference, effectiveReference.LocalTimeOriginPhysical));
             UpdateHairLines();
 
-            log.Debug("Synchronization initialized.");
+            log.DebugFormat("Synchronization initialized (preservePositions={0}).", preservePositions);
         }
 
         private void SetSyncPoint(bool intervalOnly)

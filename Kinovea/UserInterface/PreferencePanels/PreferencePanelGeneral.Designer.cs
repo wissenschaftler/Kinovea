@@ -62,19 +62,16 @@ namespace Kinovea.Root
       this.cmbHistoryCount.FormattingEnabled = true;
       this.cmbHistoryCount.Items.AddRange(new object[] {
             "0",
-            "1",
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9",
-            "10"});
+            "10",
+            "20",
+            "50",
+            "100",
+            "200",
+            "500",
+            "1000"});
       this.cmbHistoryCount.Location = new System.Drawing.Point(302, 83);
       this.cmbHistoryCount.Name = "cmbHistoryCount";
-      this.cmbHistoryCount.Size = new System.Drawing.Size(36, 21);
+      this.cmbHistoryCount.Size = new System.Drawing.Size(52, 21);
       this.cmbHistoryCount.TabIndex = 13;
       this.cmbHistoryCount.SelectedIndexChanged += new System.EventHandler(this.cmbHistoryCount_SelectedIndexChanged);
       // 

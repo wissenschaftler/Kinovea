@@ -124,6 +124,7 @@ namespace Kinovea.ScreenManager
                 manager.OrganizeCommonControls();
                 manager.OrganizeMenus();
                 manager.UpdateStatusBar();
+                manager.RefreshPeakSnapshotIfAtPeak();
             }
         }
    
@@ -134,7 +135,9 @@ namespace Kinovea.ScreenManager
         {
             log.DebugFormat("Loading video {0}.", Path.GetFileName(path));
             
-            NotificationCenter.RaiseStopPlayback(null);
+            // Stop only the target screen — global RaiseStopPlayback made every other Full
+            // player pause and contributed to the "reload all screens" feel.
+            player.StopPlaying();
 
             if (player.FrameServer.Loaded)
                 player.view.ResetToEmptyState();

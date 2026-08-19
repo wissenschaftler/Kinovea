@@ -57,6 +57,7 @@ namespace Kinovea.ScreenManager
                 manager.OrganizeScreens();
                 manager.OrganizeCommonControls();
                 manager.OrganizeMenus();
+                manager.RefreshPeakSnapshotIfAtPeak();
             }
             else if (screen is PlayerScreen)
             {

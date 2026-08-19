@@ -1,6 +1,6 @@
 #region License
 /*
-Copyright ù Joan Charmant 2008.
+Copyright ? Joan Charmant 2008.
 jcharmant@gmail.com 
  
 This file is part of Kinovea.
@@ -63,6 +63,9 @@ namespace Kinovea.ScreenManager
         private ThumbnailViewerContainer thumbnailViewerContainer = new ThumbnailViewerContainer();
         private TableLayoutPanel commonControlsHost = new TableLayoutPanel();
         private int commonControlsCount;
+        private int preparedColumns = -1;
+        private int preparedRows = -1;
+        private readonly List<AbstractScreen> preparedScreens = new List<AbstractScreen>();
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
         
@@ -127,12 +130,31 @@ namespace Kinovea.ScreenManager
 
         public void OrganizeScreens(List<AbstractScreen> screenList, int columns, int rows, bool screensSuspended)
         {
+            // During app exit screens are bulk-removed; skip intermediate UI rebuilds.
+            if (Closing)
+            {
+                if (screenList.Count == 0)
+                {
+                    pnlScreens.Visible = false;
+                    ClearScreenCells(true);
+                    preparedColumns = -1;
+                    preparedRows = -1;
+                    preparedScreens.Clear();
+                }
+                return;
+            }
+
             if (screenList.Count == 0 || screensSuspended)
             {
                 pnlScreens.Visible = false;
                 this.AllowDrop = true;
                 if (screenList.Count == 0)
+                {
                     ClearScreenCells(true);
+                    preparedColumns = -1;
+                    preparedRows = -1;
+                    preparedScreens.Clear();
+                }
 
                 if (!Closing)
                     thumbnailViewerContainer.Unhide();
@@ -187,10 +209,14 @@ namespace Kinovea.ScreenManager
         #region Screen management
         private void PrepareScreenCells(List<AbstractScreen> screenList, int columns, int rows)
         {
-            ClearScreenCells(false);
-
             if (columns <= 0 || rows <= 0 || columns * rows != screenList.Count)
                 ScreenLayoutSpec.GetDefaultGrid(screenList.Count, out columns, out rows);
+
+            // Loading a video into an existing slot does not change count/order/grid ? skip tear-down.
+            if (IsPreparedLayoutCurrent(screenList, columns, rows))
+                return;
+
+            ClearScreenCells(false);
 
             tableScreens.ColumnCount = columns;
             tableScreens.RowCount = rows;
@@ -211,6 +237,27 @@ namespace Kinovea.ScreenManager
                 screenUI.Dock = DockStyle.Fill;
                 tableScreens.Controls.Add(panel, i % columns, i / columns);
             }
+
+            preparedColumns = columns;
+            preparedRows = rows;
+            preparedScreens.Clear();
+            preparedScreens.AddRange(screenList);
+        }
+
+        private bool IsPreparedLayoutCurrent(List<AbstractScreen> screenList, int columns, int rows)
+        {
+            if (preparedColumns != columns || preparedRows != rows || preparedScreens.Count != screenList.Count)
+                return false;
+            if (tableScreens.Controls.Count != screenList.Count)
+                return false;
+
+            for (int i = 0; i < screenList.Count; i++)
+            {
+                if (!object.ReferenceEquals(preparedScreens[i], screenList[i]))
+                    return false;
+            }
+
+            return true;
         }
         private Panel CreateScreenPanel(int index)
         {

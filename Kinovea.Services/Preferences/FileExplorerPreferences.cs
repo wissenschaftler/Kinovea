@@ -123,9 +123,9 @@ namespace Kinovea.Services
             set { lastReplayFolder = value; }
         }
 
-        private int maxRecentFiles = 10;
+        private int maxRecentFiles = 1000;
         private int maxRecentCapturedFiles = 10;
-        private const int maxRecentFolders = 50;
+        private const int maxRecentFolders = 1000;
         private List<string> recentFiles = new List<string>();
         private List<string> recentFolders = new List<string>();
         private List<string> recentWatchers = new List<string>();
@@ -321,6 +321,9 @@ namespace Kinovea.Services
                 {
                     case "MaxRecentFiles":
                         maxRecentFiles = reader.ReadElementContentAsInt();
+                        // Raise capacity to the new default unless history is explicitly disabled (0).
+                        if (maxRecentFiles > 0 && maxRecentFiles < 1000)
+                            maxRecentFiles = 1000;
                         break;
                     case "RecentFiles":
                         ParseRecentFiles(reader, recentFiles, "RecentFile");
