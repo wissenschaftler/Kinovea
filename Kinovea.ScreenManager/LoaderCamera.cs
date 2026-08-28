@@ -54,10 +54,13 @@ namespace Kinovea.ScreenManager
                 CaptureScreen captureScreen = screen as CaptureScreen;
                 captureScreen.LoadCamera(summary, screenDescription);
 
-                manager.OrganizeScreens();
-                manager.OrganizeCommonControls();
-                manager.OrganizeMenus();
-                manager.RefreshPeakSnapshotIfAtPeak();
+                if (!manager.IsApplyingLaunchScreenDescriptions)
+                {
+                    manager.OrganizeScreens();
+                    manager.OrganizeCommonControls();
+                    manager.OrganizeMenus();
+                    manager.RefreshPeakSnapshotIfAtPeak();
+                }
             }
             else if (screen is PlayerScreen)
             {

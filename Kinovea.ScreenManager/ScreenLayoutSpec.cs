@@ -6,7 +6,7 @@ namespace Kinovea.ScreenManager
 {
     public sealed class ScreenLayoutSpec
     {
-        public const int MaximumScreenCount = 4;
+        public const int MaximumScreenCount = 1000;
 
         private readonly List<ScreenType> screenTypes = new List<ScreenType>();
 
@@ -35,7 +35,7 @@ namespace Kinovea.ScreenManager
                 throw new ArgumentNullException("types");
 
             screenTypes.AddRange(types);
-            if (screenTypes.Count < 1 || screenTypes.Count > MaximumScreenCount)
+            if (screenTypes.Count < 1)
                 throw new ArgumentOutOfRangeException("types");
 
             if (columns <= 0 || rows <= 0)
@@ -78,7 +78,7 @@ namespace Kinovea.ScreenManager
 
         public static void GetDefaultGrid(int count, out int columns, out int rows)
         {
-            // Preset 4-screen layout defaults to 2×2; all other counts (including 5+) use one equal-width row.
+            // Preset 4-screen layout defaults to 2×2; all other counts (including 5) use one equal-width row.
             if (count == 4)
             {
                 columns = 2;

@@ -120,11 +120,14 @@ namespace Kinovea.ScreenManager
                 if (prefsNeedSaving)
                     PreferencesManager.Save();
 
-                manager.OrganizeScreens();
-                manager.OrganizeCommonControls();
-                manager.OrganizeMenus();
-                manager.UpdateStatusBar();
-                manager.RefreshPeakSnapshotIfAtPeak();
+                if (!manager.IsApplyingLaunchScreenDescriptions)
+                {
+                    manager.OrganizeScreens();
+                    manager.OrganizeCommonControls();
+                    manager.OrganizeMenus();
+                    manager.UpdateStatusBar();
+                    manager.RefreshPeakSnapshotIfAtPeak();
+                }
             }
         }
    

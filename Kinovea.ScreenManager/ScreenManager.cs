@@ -83,6 +83,7 @@ namespace Kinovea.ScreenManager
         private bool screensSuspended;
         private SessionScreenSnapshot peakScreenSnapshot;
         private int peakScreenCount;
+        private bool applyingLaunchScreenDescriptions;
         private readonly Stack<SessionScreenSnapshot.Slot> closedScreensStack = new Stack<SessionScreenSnapshot.Slot>();
         private const int MaxClosedScreensStack = 10;
         private int dualLaunchSettingsPendingCountdown;
@@ -992,6 +993,11 @@ namespace Kinovea.ScreenManager
         public bool CanAddScreen()
         {
             return true;
+        }
+
+        public bool IsApplyingLaunchScreenDescriptions
+        {
+            get { return applyingLaunchScreenDescriptions; }
         }
 
         private int GetScreenIndex(object sender)
@@ -2300,8 +2306,6 @@ namespace Kinovea.ScreenManager
             int reloaded = 0;
 
             int count = LaunchSettingsManager.ScreenDescriptions.Count;
-            if (count > MaxScreens)
-                LaunchSettingsManager.ScreenDescriptions.RemoveRange(MaxScreens, count - MaxScreens);
 
             // Start by collecting the list of cameras to be found. 
             // We will keep the camera discovery system active until we have found all of them or time out.
@@ -2315,26 +2319,34 @@ namespace Kinovea.ScreenManager
             if (camerasToDiscover.Count == 0)
                 CameraTypeManager.StopDiscoveringCameras();
 
-            foreach (IScreenDescription screenDescription in LaunchSettingsManager.ScreenDescriptions)
+            applyingLaunchScreenDescriptions = true;
+            try
             {
-                if (screenDescription is ScreenDescriptionCapture)
+                foreach (IScreenDescription screenDescription in LaunchSettingsManager.ScreenDescriptions)
                 {
-                    int targetScreen = reloaded;
-                    AddCaptureScreen();
-                    ScreenDescriptionCapture sdc = screenDescription as ScreenDescriptionCapture;
-                    CameraSummary summary = new CameraSummary(sdc.CameraName);
+                    if (screenDescription is ScreenDescriptionCapture)
+                    {
+                        int targetScreen = reloaded;
+                        AddCaptureScreen();
+                        ScreenDescriptionCapture sdc = screenDescription as ScreenDescriptionCapture;
+                        CameraSummary summary = new CameraSummary(sdc.CameraName);
 
-                    LoaderCamera.LoadCameraInScreen(this, summary, targetScreen, sdc);
-                    reloaded++;
+                        LoaderCamera.LoadCameraInScreen(this, summary, targetScreen, sdc);
+                        reloaded++;
+                    }
+                    else if (screenDescription is ScreenDescriptionPlayback)
+                    {
+                        int targetScreen = reloaded;
+                        AddPlayerScreen();
+                        ScreenDescriptionPlayback sdp = screenDescription as ScreenDescriptionPlayback;
+                        LoaderVideo.LoadVideoInScreen(this, sdp.FullPath, targetScreen, sdp);
+                        reloaded++;
+                    }
                 }
-                else if (screenDescription is ScreenDescriptionPlayback)
-                {
-                    int targetScreen = reloaded;
-                    AddPlayerScreen();
-                    ScreenDescriptionPlayback sdp = screenDescription as ScreenDescriptionPlayback;
-                    LoaderVideo.LoadVideoInScreen(this, sdp.FullPath, targetScreen, sdp);
-                    reloaded++;
-                }
+            }
+            finally
+            {
+                applyingLaunchScreenDescriptions = false;
             }
 
             // Only player screens raise SelectionChanged used to commit dual sync.
