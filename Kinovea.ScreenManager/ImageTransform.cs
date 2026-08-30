@@ -123,6 +123,22 @@ namespace Kinovea.ScreenManager
             get { return allowOutOfScreen; }
             set { allowOutOfScreen = value; }
         }
+        /// <summary>
+        /// Offset of the letterboxed video area inside the rendering surface.
+        /// </summary>
+        public Point ContentOffset
+        {
+            get { return contentOffset; }
+            set { contentOffset = value; }
+        }
+        /// <summary>
+        /// Extra screen-space pan applied on top of centered letterbox×zoom placement.
+        /// </summary>
+        public PointF PanOffset
+        {
+            get { return panOffset; }
+            set { panOffset = value; }
+        }
         public ImageTransform Identity
         {
             // Return a barebone system with no stretch and no zoom, based on current image size. Used for saving. 
@@ -144,6 +160,8 @@ namespace Kinovea.ScreenManager
         private Rectangle zoomWindowInDecodedImage;
 
         private bool allowOutOfScreen;
+        private Point contentOffset = Point.Empty;
+        private PointF panOffset = PointF.Empty;
         private static readonly log4net.ILog log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         #endregion
 
@@ -170,12 +188,14 @@ namespace Kinovea.ScreenManager
         {
             stretch = 1.0f;
             zoom = 1.0f;
+            panOffset = PointF.Empty;
             directZoomWindow = new Rectangle(0, 0, referenceSize.Width, referenceSize.Height);
             UpdateZoomWindowInDecodedImage();
         }
         public void ReinitZoom()
         {
             zoom = 1.0f;
+            panOffset = PointF.Empty;
             directZoomWindow = new Rectangle(0, 0, referenceSize.Width, referenceSize.Height);
             UpdateZoomWindowInDecodedImage();
         }
@@ -185,23 +205,25 @@ namespace Kinovea.ScreenManager
         }
         public void UpdateZoomWindow(Point center)
         {
-            // Recreate the zoom window coordinates, after the zoom factor was changed externally, keeping the window center.
-            // Used when increasing and decreasing the zoom factor.
-            Size newSize = new Size((int)(referenceSize.Width / zoom), (int)(referenceSize.Height / zoom));
-            int left = center.X - (newSize.Width / 2);
-            int top = center.Y - (newSize.Height / 2);
-            
-            Point newLocation = ConfineZoomWindow(left, top, newSize, referenceSize);
-
-            directZoomWindow = new Rectangle(newLocation, newSize);
+            // Display-scale zoom: source stays the full image (video AR). Zoom grows letterbox×zoom at paint time.
+            // Keep the full frame as the zoom window so Transform(scale=stretch×zoom) matches rDst = letterbox×zoom.
+            directZoomWindow = new Rectangle(0, 0, referenceSize.Width, referenceSize.Height);
             UpdateZoomWindowInDecodedImage();
         }
         public void MoveZoomWindow(double dx, double dy)
         {
-            // Move the zoom window keeping the same zoom factor.
-            Point newLocation = ConfineZoomWindow((int)(directZoomWindow.Left - dx), (int)(directZoomWindow.Top - dy), directZoomWindow.Size, referenceSize);
-            directZoomWindow = new Rectangle(newLocation.X, newLocation.Y, directZoomWindow.Width, directZoomWindow.Height);
-            UpdateZoomWindowInDecodedImage();
+            // dx/dy are in image coordinates; convert to screen pan so dragging reveals overflow.
+            if (allowOutOfScreen)
+            {
+                Point newLocation = new Point((int)(directZoomWindow.Left - dx), (int)(directZoomWindow.Top - dy));
+                directZoomWindow = new Rectangle(newLocation.X, newLocation.Y, directZoomWindow.Width, directZoomWindow.Height);
+                UpdateZoomWindowInDecodedImage();
+                return;
+            }
+
+            panOffset = new PointF(
+                panOffset.X + (float)(dx * stretch * zoom),
+                panOffset.Y + (float)(dy * stretch * zoom));
         }
 
         private void UpdateZoomWindowInDecodedImage()
@@ -210,13 +232,15 @@ namespace Kinovea.ScreenManager
         }
         private Point ConfineZoomWindow(int left, int top, Size zoomWindow, Size containerSize)
         {
-            // Prevent the zoom window to move outside the rendering window.
+            // Prevent the zoom window to move outside the image; still allow reaching every edge by dragging.
             
             if(allowOutOfScreen)
                 return new Point(left, top);
 
-            int newLeft = Math.Min(Math.Max(0, left), containerSize.Width - zoomWindow.Width);
-            int newTop = Math.Min(Math.Max(0, top), containerSize.Height - zoomWindow.Height);
+            int maxLeft = Math.Max(0, containerSize.Width - zoomWindow.Width);
+            int maxTop = Math.Max(0, containerSize.Height - zoomWindow.Height);
+            int newLeft = Math.Min(Math.Max(0, left), maxLeft);
+            int newTop = Math.Min(Math.Max(0, top), maxTop);
             
             return new Point(newLeft, newTop);
         }
@@ -229,11 +253,15 @@ namespace Kinovea.ScreenManager
             // out: image coordinates.
             // Image may have been stretched, zoomed and moved.
 
-            // 1. Unstretch coords -> As if stretch factor was 1.0f.
-            double unstretchedX = (double)point.X / stretch;
-            double unstretchedY = (double)point.Y / stretch;
+            // 1. Remove letterbox offset.
+            double localX = (double)point.X - contentOffset.X;
+            double localY = (double)point.Y - contentOffset.Y;
 
-            // 2. Unzoom coords -> As if zoom factor was 1.0f.
+            // 2. Unstretch coords -> As if stretch factor was 1.0f.
+            double unstretchedX = localX / stretch;
+            double unstretchedY = localY / stretch;
+
+            // 3. Unzoom coords -> As if zoom factor was 1.0f.
             double unzoomedX = (double)directZoomWindow.Left + (unstretchedX / zoom);
             double unzoomedY = (double)directZoomWindow.Top + (unstretchedY / zoom);
 
@@ -267,7 +295,7 @@ namespace Kinovea.ScreenManager
             double stretchedX = zoomedX * stretch;
             double stretchedY = zoomedY * stretch;
 
-            return new Point((int)stretchedX, (int)stretchedY);
+            return new Point((int)stretchedX + contentOffset.X, (int)stretchedY + contentOffset.Y);
         }
         public Point Transform(PointF point)
         {
@@ -282,7 +310,7 @@ namespace Kinovea.ScreenManager
             double stretchedX = zoomedX * stretch;
             double stretchedY = zoomedY * stretch;
 
-            return new Point((int)stretchedX, (int)stretchedY);
+            return new Point((int)stretchedX + contentOffset.X, (int)stretchedY + contentOffset.Y);
         }
         public List<Point> Transform(IEnumerable<PointF> points)
         {

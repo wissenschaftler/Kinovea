@@ -1865,9 +1865,10 @@ namespace Kinovea.ScreenManager
 
             if ((ModifierKeys & Keys.Control) == Keys.Control)
             {
-                if (iScrollOffset > 0)
+                // One notch = one 10% step (ignore ScrollLines multiplier).
+                if (Math.Sign(e.Delta) > 0)
                     IncreaseDirectZoom();
-                else
+                else if (Math.Sign(e.Delta) < 0)
                     DecreaseDirectZoom();
             }
             else if ((ModifierKeys & Keys.Alt) == Keys.Alt)
@@ -2321,21 +2322,35 @@ namespace Kinovea.ScreenManager
             pbSurfaceScreen.Location = m_viewportManipulator.RenderingLocation;
             pbSurfaceScreen.Size = m_viewportManipulator.RenderingSize;
             m_FrameServer.ImageTransform.Stretch = m_viewportManipulator.Stretch;
+            m_FrameServer.ImageTransform.ContentOffset = GetVideoDestinationRect(false).Location;
             ReplaceResizers();
         }
         private void ReplaceResizers()
         {
-            ImageResizerSE.Left = pbSurfaceScreen.Right - (ImageResizerSE.Width / 2);
-            ImageResizerSE.Top = pbSurfaceScreen.Bottom - (ImageResizerSE.Height / 2);
+            // Resizers track the interactive image area (letterbox at 1x, full surface when zoomed).
+            Rectangle imageRect = GetVideoDestinationRect(false);
+            // When zoomed, destination may extend past the surface; clamp handles to the visible area.
+            int left = Math.Max(0, imageRect.Left);
+            int top = Math.Max(0, imageRect.Top);
+            int right = Math.Min(pbSurfaceScreen.Width, imageRect.Right);
+            int bottom = Math.Min(pbSurfaceScreen.Height, imageRect.Bottom);
 
-            ImageResizerSW.Left = pbSurfaceScreen.Left - (ImageResizerSW.Width / 2);
-            ImageResizerSW.Top = pbSurfaceScreen.Bottom - (ImageResizerSW.Height / 2);
+            ImageResizerSE.Left = right - (ImageResizerSE.Width / 2);
+            ImageResizerSE.Top = bottom - (ImageResizerSE.Height / 2);
 
-            ImageResizerNE.Left = pbSurfaceScreen.Right - (ImageResizerNE.Width / 2);
-            ImageResizerNE.Top = pbSurfaceScreen.Top - (ImageResizerNE.Height / 2);
+            ImageResizerSW.Left = left - (ImageResizerSW.Width / 2);
+            ImageResizerSW.Top = bottom - (ImageResizerSW.Height / 2);
 
-            ImageResizerNW.Left = pbSurfaceScreen.Left - ImageResizerNW.Width / 2;
-            ImageResizerNW.Top = pbSurfaceScreen.Top - ImageResizerNW.Height / 2;
+            ImageResizerNE.Left = right - (ImageResizerNE.Width / 2);
+            ImageResizerNE.Top = top - (ImageResizerNE.Height / 2);
+
+            ImageResizerNW.Left = left - ImageResizerNW.Width / 2;
+            ImageResizerNW.Top = top - ImageResizerNW.Height / 2;
+
+            ImageResizerSE.BringToFront();
+            ImageResizerSW.BringToFront();
+            ImageResizerNE.BringToFront();
+            ImageResizerNW.BringToFront();
         }
         private void ToggleImageFillMode()
         {
@@ -2360,16 +2375,16 @@ namespace Kinovea.ScreenManager
             if (e.Button != MouseButtons.Left)
                 return;
 
-            int iTargetHeight = (ImageResizerSE.Top - pbSurfaceScreen.Top + e.Y);
-            int iTargetWidth = (ImageResizerSE.Left - pbSurfaceScreen.Left + e.X);
+            int iTargetHeight = (ImageResizerSE.Top - m_viewportManipulator.ContentLocation.Y + e.Y);
+            int iTargetWidth = (ImageResizerSE.Left - m_viewportManipulator.ContentLocation.X + e.X);
             ManualResizeImage(iTargetWidth, iTargetHeight);
         }
         private void ImageResizerSW_MouseMove(object sender, MouseEventArgs e)
         {
             if (e.Button == MouseButtons.Left)
             {
-                int iTargetHeight = (ImageResizerSW.Top - pbSurfaceScreen.Top + e.Y);
-                int iTargetWidth = pbSurfaceScreen.Width + (pbSurfaceScreen.Left - (ImageResizerSW.Left + e.X));
+                int iTargetHeight = (ImageResizerSW.Top - m_viewportManipulator.ContentLocation.Y + e.Y);
+                int iTargetWidth = m_viewportManipulator.ContentSize.Width + (m_viewportManipulator.ContentLocation.X - (ImageResizerSW.Left + e.X));
                 ManualResizeImage(iTargetWidth, iTargetHeight);
             }
         }
@@ -2377,8 +2392,8 @@ namespace Kinovea.ScreenManager
         {
             if (e.Button == MouseButtons.Left)
             {
-                int iTargetHeight = pbSurfaceScreen.Height + (pbSurfaceScreen.Top - (ImageResizerNW.Top + e.Y));
-                int iTargetWidth = pbSurfaceScreen.Width + (pbSurfaceScreen.Left - (ImageResizerNW.Left + e.X));
+                int iTargetHeight = m_viewportManipulator.ContentSize.Height + (m_viewportManipulator.ContentLocation.Y - (ImageResizerNW.Top + e.Y));
+                int iTargetWidth = m_viewportManipulator.ContentSize.Width + (m_viewportManipulator.ContentLocation.X - (ImageResizerNW.Left + e.X));
                 ManualResizeImage(iTargetWidth, iTargetHeight);
             }
         }
@@ -2386,8 +2401,8 @@ namespace Kinovea.ScreenManager
         {
             if (e.Button == MouseButtons.Left)
             {
-                int iTargetHeight = pbSurfaceScreen.Height + (pbSurfaceScreen.Top - (ImageResizerNE.Top + e.Y));
-                int iTargetWidth = (ImageResizerNE.Left - pbSurfaceScreen.Left + e.X);
+                int iTargetHeight = m_viewportManipulator.ContentSize.Height + (m_viewportManipulator.ContentLocation.Y - (ImageResizerNE.Top + e.Y));
+                int iTargetWidth = (ImageResizerNE.Left - m_viewportManipulator.ContentLocation.X + e.X);
                 ManualResizeImage(iTargetWidth, iTargetHeight);
             }
         }
@@ -4232,6 +4247,8 @@ namespace Kinovea.ScreenManager
             if (!m_FrameServer.Loaded || saveInProgress || m_DualSaveInProgress)
                 return;
 
+            e.Graphics.Clear(Color.Black);
+
             m_TimeWatcher.LogTime("Actual start of paint");
 
             if (InteractiveFiltering)
@@ -4287,6 +4304,42 @@ namespace Kinovea.ScreenManager
             if (!m_FrameServer.Metadata.TextEditingInProgress)
                 pbSurfaceScreen.Focus();
         }
+        private Rectangle GetVideoDestinationRect(bool mirrored)
+        {
+            Size renderingSize = m_viewportManipulator.RenderingSize;
+            Size letterbox = m_viewportManipulator.ContentSize;
+            ImageTransform transform = m_FrameServer.ImageTransform;
+            double zoom = Math.Max(1.0, transform.Zoom);
+
+            // Grow the initial letterbox by zoom (video AR preserved). Black bars shrink until gone, then overflow.
+            int drawnW = Math.Max(1, (int)Math.Round(letterbox.Width * zoom));
+            int drawnH = Math.Max(1, (int)Math.Round(letterbox.Height * zoom));
+
+            int locX = (int)Math.Round((renderingSize.Width - drawnW) / 2.0 + transform.PanOffset.X);
+            int locY = (int)Math.Round((renderingSize.Height - drawnH) / 2.0 + transform.PanOffset.Y);
+
+            // Clamp: axis fully inside stays centered; overflowing axis keeps image covering the viewport.
+            locX = ClampDrawnAxis(locX, drawnW, renderingSize.Width);
+            locY = ClampDrawnAxis(locY, drawnH, renderingSize.Height);
+
+            // Keep PanOffset in sync with clamped location so drag does not accumulate past the edges.
+            transform.PanOffset = new PointF(
+                (float)(locX - (renderingSize.Width - drawnW) / 2.0),
+                (float)(locY - (renderingSize.Height - drawnH) / 2.0));
+
+            if (mirrored)
+                return new Rectangle(locX + drawnW, locY, -drawnW, drawnH);
+
+            return new Rectangle(locX, locY, drawnW, drawnH);
+        }
+        private static int ClampDrawnAxis(int location, int drawn, int container)
+        {
+            if (drawn <= container)
+                return (container - drawn) / 2;
+
+            int min = container - drawn;
+            return Math.Min(0, Math.Max(min, location));
+        }
         private void FlushOnGraphics(Bitmap _sourceImage, Graphics g, Size _renderingSize, int _iKeyFrameIndex, long _iPosition, ImageTransform _transform)
         {
             // This function is used both by the main rendering loop and by image export functions.
@@ -4311,18 +4364,20 @@ namespace Kinovea.ScreenManager
 
             m_TimeWatcher.LogTime("Before DrawImage");
 
-            Rectangle rDst = m_FrameServer.Metadata.Mirrored ? new Rectangle(_renderingSize.Width, 0, -_renderingSize.Width, _renderingSize.Height) : new Rectangle(0, 0, _renderingSize.Width, _renderingSize.Height);
+            Rectangle rDst = GetVideoDestinationRect(m_FrameServer.Metadata.Mirrored);
+            Size contentSize = m_viewportManipulator.ContentSize;
             
             if (m_viewportManipulator.MayDrawUnscaled && m_FrameServer.VideoReader.CanDrawUnscaled)
             {
                 // Source image should be at the right size, unless it has been temporarily disabled.
                 // This is an optimization where the video reader is asked to decode images that might be smaller than the original size, 
                 // in order to match the rendering size.
-                if (_transform.ZoomWindowInDecodedImage.Size.CloseTo(_renderingSize) && !m_FrameServer.Metadata.Mirrored)
+                if (_transform.ZoomWindowInDecodedImage.Size.CloseTo(contentSize) && !m_FrameServer.Metadata.Mirrored)
                 {
                     if (!_transform.Zooming && !m_HasImageAdjustments)
                     {
-                        g.DrawImageUnscaled(_sourceImage, 0, 0);
+                        Point contentLoc = m_viewportManipulator.ContentLocation;
+                        g.DrawImageUnscaled(_sourceImage, contentLoc.X, contentLoc.Y);
                     }
                     else
                     {
@@ -4350,7 +4405,8 @@ namespace Kinovea.ScreenManager
                 if (!_transform.Zooming && !m_FrameServer.Metadata.Mirrored && _transform.Stretch == 1.0f && _transform.DecodingScale == 1.0 && !m_HasImageAdjustments)
                 {
                     // This allow to draw unscaled while tracking or caching for example, provided we are rendering at original size.
-                    g.DrawImageUnscaled(_sourceImage, 0, 0);
+                    Point contentLoc = m_viewportManipulator.ContentLocation;
+                    g.DrawImageUnscaled(_sourceImage, contentLoc.X, contentLoc.Y);
                 }
                 else
                 {
@@ -4372,7 +4428,7 @@ namespace Kinovea.ScreenManager
                 // The mirroring, if any, will have been done already and applied to the sync image.
                 // (because to draw the other image, we take into account its own mirroring option,
                 // not the option in this screen.)
-                Rectangle rSyncDst = new Rectangle(0, 0, _renderingSize.Width, _renderingSize.Height);
+                Rectangle rSyncDst = rDst;
                 g.DrawImage(m_SyncMergeImage, rSyncDst, 0, 0, m_SyncMergeImage.Width, m_SyncMergeImage.Height, GraphicsUnit.Pixel, m_SyncMergeImgAttr);
             }
 
@@ -5455,12 +5511,26 @@ namespace Kinovea.ScreenManager
         {
             // Use position and magnification to Direct Zoom.
             // Go to direct zoom, at magnifier zoom factor, centered on same point as magnifier.
+            Point center = m_FrameServer.Metadata.Magnifier.Center;
             m_FrameServer.ImageTransform.Zoom = m_FrameServer.Metadata.Magnifier.MagnificationFactor;
-            m_FrameServer.ImageTransform.UpdateZoomWindow(m_FrameServer.Metadata.Magnifier.Center);
+            m_FrameServer.ImageTransform.UpdateZoomWindow(center);
             DisableMagnifier();
             ToastZoom();
             
             ResizeUpdate(true);
+
+            // Pan so the magnifier center sits in the middle of the sub-screen.
+            Size renderingSize = m_viewportManipulator.RenderingSize;
+            Size letterbox = m_viewportManipulator.ContentSize;
+            double zoom = Math.Max(1.0, m_FrameServer.ImageTransform.Zoom);
+            double stretch = m_FrameServer.ImageTransform.Stretch;
+            int drawnW = Math.Max(1, (int)Math.Round(letterbox.Width * zoom));
+            int drawnH = Math.Max(1, (int)Math.Round(letterbox.Height * zoom));
+            float panX = renderingSize.Width / 2f - (float)(center.X * stretch * zoom) - (renderingSize.Width - drawnW) / 2f;
+            float panY = renderingSize.Height / 2f - (float)(center.Y * stretch * zoom) - (renderingSize.Height - drawnH) / 2f;
+            m_FrameServer.ImageTransform.PanOffset = new PointF(panX, panY);
+            m_FrameServer.ImageTransform.ContentOffset = GetVideoDestinationRect(false).Location;
+            DoInvalidate();
         }
         private void mnuMagnifierChangeMagnification(object sender, EventArgs e)
         {
@@ -5512,7 +5582,8 @@ namespace Kinovea.ScreenManager
             if (m_FrameServer.Metadata.Magnifier.Mode != MagnifierMode.None)
                 DisableMagnifier();
             
-            m_FrameServer.ImageTransform.Zoom = Math.Min(m_FrameServer.ImageTransform.Zoom + 0.10f, m_MaxZoomFactor);
+            double next = Math.Round((m_FrameServer.ImageTransform.Zoom + 0.10) * 10.0) / 10.0;
+            m_FrameServer.ImageTransform.Zoom = Math.Min(next, m_MaxZoomFactor);
             AfterZoomChange();
         }
         private void DecreaseDirectZoom()
@@ -5520,17 +5591,20 @@ namespace Kinovea.ScreenManager
             if (!m_FrameServer.ImageTransform.Zooming)
                 return;
 
-            m_FrameServer.ImageTransform.Zoom = Math.Max(m_FrameServer.ImageTransform.Zoom - 0.10f, 1.0f);
+            double next = Math.Round((m_FrameServer.ImageTransform.Zoom - 0.10) * 10.0) / 10.0;
+            m_FrameServer.ImageTransform.Zoom = Math.Max(next, 1.0);
             AfterZoomChange();
         }
         private void AfterZoomChange()
         {
             m_FrameServer.ImageTransform.UpdateZoomWindow();
+            ResizeUpdate(true);
+            m_FrameServer.ImageTransform.ContentOffset = GetVideoDestinationRect(false).Location;
             m_PointerTool.SetZoomLocation(m_FrameServer.ImageTransform.ZoomWindow.Location);
             ToastZoom();
             UpdateCursor();
             ReportForSyncMerge();
-            ResizeUpdate(true);
+            DoInvalidate();
         }
         #endregion
         
@@ -5576,9 +5650,11 @@ namespace Kinovea.ScreenManager
         }
         private void ReportForSyncMergeIfViewportChanged(double deltaX, double deltaY)
         {
-            Rectangle before = m_FrameServer.ImageTransform.ZoomWindow;
+            PointF beforePan = m_FrameServer.ImageTransform.PanOffset;
             m_FrameServer.ImageTransform.MoveZoomWindow(deltaX, deltaY);
-            if (m_FrameServer.ImageTransform.ZoomWindow != before)
+            // Apply clamp via destination rect and sync ContentOffset for hit-testing.
+            m_FrameServer.ImageTransform.ContentOffset = GetVideoDestinationRect(false).Location;
+            if (m_FrameServer.ImageTransform.PanOffset != beforePan)
                 ReportForSyncMerge();
         }
         private void ReportForSyncMerge()
@@ -5608,11 +5684,7 @@ namespace Kinovea.ScreenManager
             Bitmap copy = new Bitmap(copySize.Width, copySize.Height);
             Graphics g = Graphics.FromImage(copy);
             
-            Rectangle rDst;
-            if(m_FrameServer.Metadata.Mirrored)
-                rDst = new Rectangle(copySize.Width, 0, -copySize.Width, copySize.Height);
-            else
-                rDst = new Rectangle(0, 0, copySize.Width, copySize.Height);
+            Rectangle rDst = GetVideoDestinationRect(m_FrameServer.Metadata.Mirrored);
             
             if (m_viewportManipulator.MayDrawUnscaled && m_FrameServer.VideoReader.CanDrawUnscaled)
                 DrawVideoFrame(m_FrameServer.CurrentImage, g, rDst, m_FrameServer.ImageTransform.ZoomWindowInDecodedImage);

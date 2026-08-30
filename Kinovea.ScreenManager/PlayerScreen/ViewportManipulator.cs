@@ -39,6 +39,17 @@ namespace Kinovea.ScreenManager
         {
             get { return renderingLocation; }
         }
+        /// <summary>
+        /// Letterboxed video area inside the full rendering surface.
+        /// </summary>
+        public Size ContentSize
+        {
+            get { return contentSize; }
+        }
+        public Point ContentLocation
+        {
+            get { return contentLocation; }
+        }
         public double Stretch
         {
             get { return stretchFactor; }
@@ -58,8 +69,10 @@ namespace Kinovea.ScreenManager
         #endregion
 
         #region Members
-        private Size renderingSize;               // Size of the drawing surface.
+        private Size renderingSize;               // Size of the drawing surface (fills the container).
         private Point renderingLocation;          // Location of the drawing surface relatively to the viewport container.
+        private Size contentSize;                 // Letterboxed video area inside the drawing surface.
+        private Point contentLocation;            // Offset of the video area inside the drawing surface.
         private double stretchFactor = 1.0;       // Asked stretch factor. May be updated during the computation if it's too large to fit.
                                                   // This is the factor applied to the reference size in order to make it fit in the drawing surface.
         private Size preferredDecodingSize;                // Size at which we will ask the VideoReader to provide its frames, before rotation. (Not necessarily honored by the reader).
@@ -85,7 +98,7 @@ namespace Kinovea.ScreenManager
         {
             // One of the constraint has changed, recompute the sizes.
             bool sideway = reader.Info.ImageRotation == ImageRotation.Rotate90 || reader.Info.ImageRotation == ImageRotation.Rotate270;
-            ComputeRenderingSize(sideway, _containerSize, _stretchFactor, _fillContainer);
+            ComputeRenderingSize(sideway, _containerSize, _stretchFactor, _fillContainer, _zoomFactor);
 
             // If the manipulation is not finished, we are in the process of scaling the rendering surface.
             // During this period the decoding size doesn't change.
@@ -109,32 +122,37 @@ namespace Kinovea.ScreenManager
         /// The stretch factor is how much the user want to stretch the image and is based on image corner manipulation. It can go either way of 1.0f.
         /// The stretch factor is independent from the zoom, which is only the magnification inside the image.
         /// </summary>
-        private void ComputeRenderingSize(bool sideway, Size _containerSize, double _stretchFactor, bool _fillContainer)
+        private void ComputeRenderingSize(bool sideway, Size _containerSize, double _stretchFactor, bool _fillContainer, double _zoomFactor)
         {
             Size referenceSize = reader.Info.ReferenceSize;
             stretchFactor = _stretchFactor;
             Size stretchedSize = new Size((int)(referenceSize.Width * stretchFactor), (int)(referenceSize.Height * stretchFactor));
 
+            float ratioWidth = (float)_containerSize.Width / referenceSize.Width;
+            float ratioHeight = (float)_containerSize.Height / referenceSize.Height;
+
+            // Always compute the letterbox (contain) size. Zoom grows this at paint time (letterbox × zoom).
             if (!stretchedSize.FitsIn(_containerSize) || _fillContainer)
             {
-                // Ratio stretch based on the reference size.
-                float ratioWidth = (float)_containerSize.Width / referenceSize.Width;
-                float ratioHeight = (float)_containerSize.Height / referenceSize.Height;
-
                 if (ratioWidth < ratioHeight)
-                    renderingSize = new Size(_containerSize.Width, (int)(referenceSize.Height * ratioWidth));
+                    contentSize = new Size(_containerSize.Width, (int)(referenceSize.Height * ratioWidth));
                 else
-                    renderingSize = new Size((int)(referenceSize.Width * ratioHeight), _containerSize.Height);
+                    contentSize = new Size((int)(referenceSize.Width * ratioHeight), _containerSize.Height);
 
                 stretchFactor = Math.Min(ratioWidth, ratioHeight);
             }
             else
             {
-                renderingSize = stretchedSize;
+                contentSize = stretchedSize;
             }
 
-            renderingLocation = new Point((_containerSize.Width - renderingSize.Width) / 2, (_containerSize.Height - renderingSize.Height) / 2);
+            contentLocation = new Point((_containerSize.Width - contentSize.Width) / 2, (_containerSize.Height - contentSize.Height) / 2);
 
+            // Surface fills the container for interaction; letterbox/zoom draw rect is applied at paint time.
+            renderingSize = _containerSize;
+            renderingLocation = Point.Empty;
+
+            // Zoom factor is applied when painting (drawn = contentSize * zoom), not here.
             //log.DebugFormat("ComputeRenderingSize. sideways:{0}, container:{1}, stretch:{2:0.00} -> {3:0.00}, fill:{4}, reference:{5}, rendering:{6}", 
             //  sideways, _containerSize, _stretchFactor, stretchFactor, _fillContainer, referenceSize, renderingSize);
         }
@@ -147,9 +165,9 @@ namespace Kinovea.ScreenManager
             // Updates the following globals: preferredDecodingSize, mayDrawUnscaled, renderingZoomFactor.
             // Note: the decoding size doesn't care about rotation, as the pipeline is read > scale > rotate.
             Size aspectRatioSize = reader.Info.AspectRatioSize;
-            Size unrotatedRenderingSize = renderingSize;
+            Size unrotatedRenderingSize = contentSize;
             if (sideway)
-                unrotatedRenderingSize = new Size(renderingSize.Height, renderingSize.Width);
+                unrotatedRenderingSize = new Size(contentSize.Height, contentSize.Width);
 
             if (!_enableCustomDecodingSize || !_scalable)
             {
